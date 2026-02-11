@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Project outputs
+outputs/
+datasets/
+
+# ComfyUI large files (track config, not models)
+ComfyUI/venv/
+ComfyUI/models/checkpoints/*.safetensors
+ComfyUI/models/loras/*.safetensors
+ComfyUI/models/controlnet/*.safetensors
+ComfyUI/output/
+ComfyUI/temp/
+ComfyUI/user/
+ComfyUI/custom_nodes/
+
+# Backend
+backend/.venv/
+backend/game_asset_generator.db

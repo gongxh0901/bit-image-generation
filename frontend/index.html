@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>游戏素材生成系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-ok { background: #166534; color: #bbf7d0; }
+    .badge-err { background: #991b1b; color: #fecaca; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 18px; }
+    .card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #f8fafc; }
+    label { display: block; margin: 10px 0 4px; font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
+    input, select, textarea { width: 100%; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; padding: 8px 10px; font-size: 13px; outline: none; transition: border-color .2s; }
+    input:focus, select:focus, textarea:focus { border-color: #3b82f6; }
+    textarea { min-height: 68px; resize: vertical; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    button { flex: 1; padding: 9px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; transition: background .15s; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary { background: #334155; color: #cbd5e1; }
+    .btn-secondary:hover { background: #475569; }
+    .log-section { margin-top: 16px; }
+    .log-section h2 { margin: 0 0 8px; font-size: 15px; }
+    #log { background: #020617; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+    .log-time { color: #64748b; }
+    .log-ok { color: #4ade80; }
+    .log-err { color: #f87171; }
+    .log-ws { color: #38bdf8; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>游戏素材生成系统</h1>
+    <span id="ws-status" class="badge badge-err">WS 断开</span>
+  </header>
+
+  <div class="grid">
+    <!-- 风格管理 -->
+    <section class="card">
+      <h2>风格管理</h2>
+      <label>名称</label>
+      <input id="style-name" value="cartoon-ui-v1" />
+      <label>类型</label>
+      <select id="style-type">
+        <option value="ui">UI 素材</option>
+        <option value="vfx">VFX 特效</option>
+      </select>
+      <label>LoRA 路径</label>
+      <input id="style-lora" placeholder="models/loras/xxx.safetensors" />
+      <label>触发词</label>
+      <input id="style-trigger" placeholder="cartoon, vivid" />
+      <div class="btn-row">
+        <button class="btn-primary" id="btn-create-style">创建风格</button>
+        <button class="btn-secondary" id="btn-list-style">刷新列表</button>
+      </div>
+    </section>
+
+    <!-- 训练中心 -->
+    <section class="card">
+      <h2>训练中心</h2>
+      <label>Style ID</label>
+      <input id="train-style-id" type="number" value="1" />
+      <label>数据集路径</label>
+      <input id="train-dataset" value="datasets/cartoon_ui" />
+      <label>训练参数 (JSON)</label>
+      <textarea id="train-params">{
+  "batch_size": 1,
+  "learning_rate": 0.0001,
+  "max_train_steps": 1000,
+  "resolution": 1024
+}</textarea>
+      <div class="btn-row">
+        <button class="btn-primary" id="btn-train">启动训练</button>
+      </div>
+    </section>
+
+    <!-- 生成中心 -->
+    <section class="card">
+      <h2>生成中心</h2>
+      <label>Style ID</label>
+      <input id="gen-style-id" type="number" value="1" />
+      <label>任务类型</label>
+      <select id="gen-type">
+        <option value="txt2img">文生图 (txt2img)</option>
+        <option value="img2img">图生图 (img2img)</option>
+      </select>
+      <label>Prompt</label>
+      <textarea id="gen-prompt">fantasy game ui icon, glowing gem, high detail</textarea>
+      <div class="btn-row">
+        <button class="btn-primary" id="btn-generate">提交生成</button>
+        <button class="btn-secondary" id="btn-list-tasks">任务列表</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 生成结果图片 -->
+  <section class="card log-section" id="gallery-section" style="display:none;">
+    <h2>生成结果</h2>
+    <div id="gallery" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
+  </section>
+
+  <!-- 输出日志 -->
+  <section class="card log-section">
+    <h2>实时日志</h2>
+    <div id="log"></div>
+  </section>
+</div>
+
+<script>
+  // ---------- 自动检测后端地址 ----------
+  const loc = window.location;
+  const base = `${loc.protocol}//${loc.host}`;
+  const wsProto = loc.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${wsProto}//${loc.host}/ws/progress`;
+
+  const logEl = document.getElementById("log");
+  const wsStatus = document.getElementById("ws-status");
+
+  function log(msg, cls = "") {
+    const time = new Date().toLocaleTimeString();
+    const text = typeof msg === "string" ? msg : JSON.stringify(msg, null, 2);
+    const div = document.createElement("div");
+    div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${cls}">${escapeHtml(text)}</span>`;
+    logEl.prepend(div);
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ---------- API helper ----------
+  async function api(path, opts = {}) {
+    const res = await fetch(`${base}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...opts,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${text}`);
+    }
+    return res.json();
+  }
+
+  // ---------- 风格管理 ----------
+  document.getElementById("btn-create-style").onclick = async () => {
+    try {
+      const payload = {
+        name: document.getElementById("style-name").value,
+        type: document.getElementById("style-type").value,
+        lora_path: document.getElementById("style-lora").value || null,
+        trigger_words: document.getElementById("style-trigger").value || null,
+      };
+      const r = await api("/api/styles", { method: "POST", body: JSON.stringify(payload) });
+      log(`[创建风格] id=${r.id}  name=${r.name}  type=${r.type}`, "log-ok");
+    } catch (e) { log(`[创建风格] ${e.message}`, "log-err"); }
+  };
+
+  document.getElementById("btn-list-style").onclick = async () => {
+    try {
+      const list = await api("/api/styles");
+      log(`[风格列表] 共 ${list.length} 项: ${JSON.stringify(list)}`, "log-ok");
+    } catch (e) { log(`[风格列表] ${e.message}`, "log-err"); }
+  };
+
+  // ---------- 训练中心 ----------
+  document.getElementById("btn-train").onclick = async () => {
+    try {
+      const payload = {
+        style_id: Number(document.getElementById("train-style-id").value),
+        dataset_path: document.getElementById("train-dataset").value,
+        params: JSON.parse(document.getElementById("train-params").value),
+      };
+      const r = await api("/api/training", { method: "POST", body: JSON.stringify(payload) });
+      log(`[启动训练] job_id=${r.id}  status=${r.status}`, "log-ok");
+    } catch (e) { log(`[启动训练] ${e.message}`, "log-err"); }
+  };
+
+  // ---------- 生成中心 ----------
+  document.getElementById("btn-generate").onclick = async () => {
+    try {
+      const payload = {
+        style_id: Number(document.getElementById("gen-style-id").value),
+        type: document.getElementById("gen-type").value,
+        prompt: document.getElementById("gen-prompt").value,
+      };
+      const r = await api("/api/generate", { method: "POST", body: JSON.stringify(payload) });
+      log(`[提交生成] task_id=${r.id}  status=${r.status}`, "log-ok");
+    } catch (e) { log(`[提交生成] ${e.message}`, "log-err"); }
+  };
+
+  document.getElementById("btn-list-tasks").onclick = async () => {
+    try {
+      const list = await api("/api/tasks");
+      log(`[任务列表] 共 ${list.length} 项:\n${JSON.stringify(list, null, 2)}`, "log-ok");
+    } catch (e) { log(`[任务列表] ${e.message}`, "log-err"); }
+  };
+
+  // ---------- WebSocket ----------
+  let ws;
+  function connectWs() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      wsStatus.textContent = "WS 已连接";
+      wsStatus.className = "badge badge-ok";
+      log("WebSocket 已连接", "log-ws");
+      setInterval(() => { if (ws.readyState === 1) ws.send("ping"); }, 5000);
+    };
+    ws.onmessage = (evt) => {
+      const d = JSON.parse(evt.data);
+      const pct = d.progress !== undefined ? ` ${d.progress}%` : "";
+      log(`[WS] ${d.kind} #${d.id}  ${d.status}${pct}`, "log-ws");
+
+      // Show images when generation completes
+      if (d.kind === "generation" && d.status === "completed" && d.output_paths) {
+        const gallery = document.getElementById("gallery");
+        const section = document.getElementById("gallery-section");
+        section.style.display = "block";
+        d.output_paths.forEach(p => {
+          const img = document.createElement("img");
+          img.src = `${base}${p}`;
+          img.style.cssText = "max-width:256px;border-radius:8px;border:1px solid #334155;";
+          img.title = p;
+          gallery.prepend(img);
+        });
+      }
+    };
+    ws.onclose = () => {
+      wsStatus.textContent = "WS 断开";
+      wsStatus.className = "badge badge-err";
+      log("WebSocket 断开，3秒后重连…", "log-err");
+      setTimeout(connectWs, 3000);
+    };
+    ws.onerror = () => {};
+  }
+  connectWs();
+</script>
+</body>
+</html>
