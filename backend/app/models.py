@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,6 +19,8 @@ class Style(Base):
     lora_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     trigger_words: Mapped[str | None] = mapped_column(String(512), nullable=True)
     preview_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    is_base: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    is_trained: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -31,6 +33,7 @@ class TrainingJob(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued")
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     progress: Mapped[float] = mapped_column(Float, default=0.0)
+    output_lora_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -41,6 +44,7 @@ class GenerationTask(Base):
     style_id: Mapped[int | None] = mapped_column(ForeignKey("styles.id"), nullable=True)
     type: Mapped[str] = mapped_column(String(32), nullable=False)  # txt2img | img2img
     prompt: Mapped[str] = mapped_column(String(2000), nullable=False)
+    input_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="queued")
     output_paths: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -67,6 +67,8 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
     try {
       const { formData } = get();
       const job = await submitTraining({
+        style_name: formData.styleName,
+        style_type: formData.styleType,
         dataset_path: `datasets/${formData.styleName}`,
         params: formData.params,
       });

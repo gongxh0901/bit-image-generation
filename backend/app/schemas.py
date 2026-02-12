@@ -10,6 +10,15 @@ class StyleCreate(BaseModel):
     lora_path: str | None = None
     trigger_words: str | None = None
     preview_image: str | None = None
+    is_base: bool = False
+    is_trained: bool = False
+
+
+class StyleUpdate(BaseModel):
+    name: str | None = None
+    type: Literal["ui", "vfx"] | None = None
+    trigger_words: str | None = None
+    preview_image: str | None = None
 
 
 class StyleRead(BaseModel):
@@ -19,6 +28,8 @@ class StyleRead(BaseModel):
     lora_path: str | None
     trigger_words: str | None
     preview_image: str | None
+    is_base: bool
+    is_trained: bool
     created_at: datetime
 
     class Config:
@@ -26,7 +37,8 @@ class StyleRead(BaseModel):
 
 
 class TrainingJobCreate(BaseModel):
-    style_id: int | None = None
+    style_name: str  # 训练时同步创建风格的名称
+    style_type: Literal["ui", "vfx"] = "ui"
     dataset_path: str
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -38,6 +50,7 @@ class TrainingJobRead(BaseModel):
     status: str
     params: dict[str, Any]
     progress: float
+    output_lora_path: str | None
     created_at: datetime
 
     class Config:
@@ -48,6 +61,7 @@ class GenerationTaskCreate(BaseModel):
     style_id: int | None = None
     type: Literal["txt2img", "img2img"]
     prompt: str
+    input_image: str | None = None
 
 
 class GenerationTaskRead(BaseModel):
@@ -55,6 +69,7 @@ class GenerationTaskRead(BaseModel):
     style_id: int | None
     type: str
     prompt: str
+    input_image: str | None
     status: str
     output_paths: list[str]
     created_at: datetime

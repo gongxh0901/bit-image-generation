@@ -9,6 +9,7 @@ export interface TrainingJob {
   status: TrainingStatus;
   params: TrainingParams;
   progress: number;
+  output_lora_path: string | null;
   created_at: string;
 }
 
@@ -23,7 +24,8 @@ export interface TrainingParams {
 
 /** 创建训练任务请求 */
 export interface TrainingJobCreate {
-  style_id?: number | null;
+  style_name: string;
+  style_type: 'ui' | 'vfx';
   dataset_path: string;
   params: TrainingParams;
 }

@@ -11,16 +11,19 @@ import {
   InputNumber,
   message,
   Tag,
+  Image,
 } from 'antd';
 import {
   SendOutlined,
   InboxOutlined,
   PictureOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import { useState } from 'react';
 import { useStyleStore, useGenerationStore } from '@/stores';
 import { getStatusInfo } from '@/utils/format';
+import { uploadImage } from '@/services/upload';
 import styles from './GenerationPanel.module.css';
 
 const { TextArea } = Input;
@@ -41,10 +44,35 @@ export function GenerationPanel() {
 
   const [form] = Form.useForm();
   const [_fileList, setFileList] = useState<UploadFile[]>([]);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const selectedStyle = styleList.find((s) => s.id === selectedStyleId);
 
   const isRunning = currentTask?.status === 'queued' || currentTask?.status === 'running';
+
+  /** 处理图片上传 */
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const result = await uploadImage(file);
+      setUploadedImageUrl(result.url);
+      message.success('图片上传成功');
+      // 自动切换到 img2img 模式
+      form.setFieldValue('type', 'img2img');
+    } catch {
+      message.error('图片上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /** 移除已上传的图片 */
+  const handleRemoveImage = () => {
+    setUploadedImageUrl(null);
+    setFileList([]);
+    form.setFieldValue('type', 'txt2img');
+  };
 
   const handleSubmit = async () => {
     if (!selectedStyleId) {
@@ -53,11 +81,20 @@ export function GenerationPanel() {
     }
     try {
       const values = await form.validateFields();
+      const genType = values.type as 'txt2img' | 'img2img';
+
+      // img2img 模式必须上传参考图
+      if (genType === 'img2img' && !uploadedImageUrl) {
+        message.warning('图生图模式需要上传参考图片');
+        return;
+      }
+
       setGenerating(selectedStyleId, true);
       await submit({
         styleId: selectedStyleId,
         prompt: values.prompt,
-        type: values.type,
+        type: genType,
+        inputImage: genType === 'img2img' ? uploadedImageUrl : undefined,
       });
       message.success('生成任务已提交');
     } catch {
@@ -113,19 +150,48 @@ export function GenerationPanel() {
 
           {/* 参考图上传 */}
           <Form.Item label="参考图片（可选）">
-            <Dragger
-              accept="image/jpeg,image/png,image/webp"
-              maxCount={1}
-              beforeUpload={() => false}
-              onChange={({ fileList }) => setFileList(fileList)}
-              className={styles.uploader}
-            >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">点击或拖拽上传参考图片</p>
-              <p className="ant-upload-hint">支持 JPG / PNG / WebP，最大 10MB</p>
-            </Dragger>
+            {uploadedImageUrl ? (
+              <div className={styles.uploadedPreview}>
+                <Image
+                  src={uploadedImageUrl}
+                  alt="参考图"
+                  width={120}
+                  height={120}
+                  style={{ objectFit: 'cover', borderRadius: 8 }}
+                />
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  onClick={handleRemoveImage}
+                  className={styles.removeBtn}
+                >
+                  移除
+                </Button>
+              </div>
+            ) : (
+              <Dragger
+                accept="image/jpeg,image/png,image/webp"
+                maxCount={1}
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  handleUpload(file);
+                  return false;
+                }}
+                onChange={({ fileList }) => setFileList(fileList)}
+                className={styles.uploader}
+                disabled={uploading}
+              >
+                <p className="ant-upload-drag-icon">
+                  <InboxOutlined />
+                </p>
+                <p className="ant-upload-text">
+                  {uploading ? '上传中...' : '点击或拖拽上传参考图片'}
+                </p>
+                <p className="ant-upload-hint">支持 JPG / PNG / WebP，最大 10MB</p>
+              </Dragger>
+            )}
           </Form.Item>
 
           {/* 提示词 */}

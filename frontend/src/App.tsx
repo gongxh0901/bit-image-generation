@@ -8,6 +8,7 @@ import { Layout } from '@/components/Layout';
 // 路由懒加载
 const Home = lazy(() => import('@/pages/Home'));
 const Training = lazy(() => import('@/pages/Training'));
+const History = lazy(() => import('@/pages/History'));
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route element={<Layout />}>
               <Route path="/" element={<Home />} />
               <Route path="/training" element={<Training />} />
+              <Route path="/history" element={<History />} />
             </Route>
           </Routes>
         </Suspense>

@@ -82,6 +82,7 @@ aiosqlite
 greenlet  # SQLAlchemy async 需要
 pydantic
 aiohttp   # ComfyUI 通信
+python-multipart  # 文件上传 (POST /api/upload)
 ```
 
 ## KEY IMPLEMENTATIONS
@@ -103,5 +104,8 @@ JSON 使用 `{{key}}` 占位符，运行时 `_fill_template()` 替换。
 
 - **会话管理**: 每个 worker 独立创建 `AsyncSession`，避免跨协程共享
 - **图片输出**: 从 `ComfyUI/output/` 复制到项目 `outputs/`，路径转为 `/outputs/{filename}`
+- **参考图上传**: 上传文件保存到 `uploads/`，img2img 时复制到 ComfyUI input 并使用真实路径
+- **基础风格**: 启动时自动创建「基础风格」（`is_base=True`），不可删除，使用 SDXL Base 无自定义 LoRA
+- **数据库迁移**: `_migrate_columns()` 在启动时检查并添加新列到现有 SQLite 表
 - **超时**: `wait_for_completion()` 默认 300 秒
 - **环境**: `COMFYUI_URL` 默认 `http://127.0.0.1:8188`

@@ -19,6 +19,7 @@ interface GenerationStore {
     styleId: number;
     prompt: string;
     type: 'txt2img' | 'img2img';
+    inputImage?: string | null;
   }) => Promise<GenerationTask>;
 
   updateTaskProgress: (data: {
@@ -45,13 +46,14 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
   loading: false,
   error: null,
 
-  submitGeneration: async ({ styleId, prompt, type }) => {
+  submitGeneration: async ({ styleId, prompt, type, inputImage }) => {
     set({ loading: true, error: null });
     try {
       const task = await submitGeneration({
         style_id: styleId,
         type,
         prompt,
+        input_image: inputImage ?? undefined,
       });
       set({ currentTask: task, loading: false });
       return task;

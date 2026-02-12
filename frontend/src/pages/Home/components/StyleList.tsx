@@ -1,13 +1,18 @@
-import { List, Tag, Spin, Empty, Typography, Button, Space } from 'antd';
+import { List, Tag, Spin, Empty, Typography, Button, Space, Popconfirm, message } from 'antd';
 import {
   PlusOutlined,
   LoadingOutlined,
   AppstoreOutlined,
   FireOutlined,
+  StarFilled,
+  EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { useStyleStore } from '@/stores';
 import { useState } from 'react';
+import type { Style } from '@/types';
 import { CreateStyleModal } from './CreateStyleModal';
+import { EditStyleModal } from './EditStyleModal';
 import styles from './StyleList.module.css';
 
 const { Text, Title } = Typography;
@@ -32,9 +37,28 @@ export function StyleList() {
     generatingStyleIds,
     loading,
     selectStyle,
+    deleteStyle,
   } = useStyleStore();
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingStyle, setEditingStyle] = useState<Style | null>(null);
+
+  const handleEdit = (e: React.MouseEvent, style: Style) => {
+    e.stopPropagation();
+    setEditingStyle(style);
+    setEditModalOpen(true);
+  };
+
+  const handleDelete = async (e: React.MouseEvent | undefined, style: Style) => {
+    e?.stopPropagation();
+    try {
+      await deleteStyle(style.id);
+      message.success(`已删除风格「${style.name}」`);
+    } catch {
+      message.error('删除失败');
+    }
+  };
 
   return (
     <div className={styles.container}>
@@ -77,13 +101,13 @@ export function StyleList() {
 
               return (
                 <div
-                  className={`${styles.item} ${isSelected ? styles.selected : ''}`}
+                  className={`${styles.item} ${isSelected ? styles.selected : ''} ${style.is_base ? styles.baseItem : ''}`}
                   onClick={() => selectStyle(style.id)}
                 >
                   <div className={styles.itemContent}>
-                    <Space size={8} align="center">
-                      <span className={styles.itemIcon}>
-                        {typeIcon[style.type] ?? <AppstoreOutlined />}
+                    <Space size={8} align="center" style={{ flex: 1 }}>
+                      <span className={`${styles.itemIcon} ${style.is_base ? styles.baseIcon : ''}`}>
+                        {style.is_base ? <StarFilled /> : (typeIcon[style.type] ?? <AppstoreOutlined />)}
                       </span>
                       <div>
                         <Text strong className={styles.itemName}>
@@ -96,6 +120,21 @@ export function StyleList() {
                           >
                             {style.type.toUpperCase()}
                           </Tag>
+                          {style.is_base && (
+                            <Tag color="gold" className={styles.tag}>
+                              内置
+                            </Tag>
+                          )}
+                          {!style.is_base && style.is_trained && (
+                            <Tag color="green" className={styles.tag}>
+                              已训练
+                            </Tag>
+                          )}
+                          {!style.is_base && !style.is_trained && (
+                            <Tag color="default" className={styles.tag}>
+                              未训练
+                            </Tag>
+                          )}
                           {isGenerating && (
                             <Tag color="processing" icon={<LoadingOutlined />} className={styles.tag}>
                               生成中
@@ -104,6 +143,38 @@ export function StyleList() {
                         </div>
                       </div>
                     </Space>
+                    {/* 操作按钮 */}
+                    <div className={styles.actions}>
+                      {!style.is_base && (
+                        <>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={(e) => handleEdit(e, style)}
+                            className={styles.actionBtn}
+                          />
+                          <Popconfirm
+                            title="确认删除"
+                            description={`确定要删除风格「${style.name}」吗？`}
+                            onConfirm={(e) => handleDelete(e, style)}
+                            onCancel={(e) => e?.stopPropagation()}
+                            okText="删除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              icon={<DeleteOutlined />}
+                              onClick={(e) => e.stopPropagation()}
+                              className={styles.actionBtn}
+                            />
+                          </Popconfirm>
+                        </>
+                      )}
+                    </div>
                   </div>
                   {isSelected && <div className={styles.indicator} />}
                 </div>
@@ -125,6 +196,15 @@ export function StyleList() {
       <CreateStyleModal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
+      />
+
+      <EditStyleModal
+        open={editModalOpen}
+        style={editingStyle}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingStyle(null);
+        }}
       />
     </div>
   );

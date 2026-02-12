@@ -2,6 +2,7 @@ import { Layout, Menu, Badge, Typography, Space } from 'antd';
 import {
   HomeOutlined,
   ExperimentOutlined,
+  HistoryOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -37,6 +38,11 @@ export function Header() {
       key: '/training',
       icon: <ExperimentOutlined />,
       label: '训练中心',
+    },
+    {
+      key: '/history',
+      icon: <HistoryOutlined />,
+      label: '历史任务',
     },
   ];
 

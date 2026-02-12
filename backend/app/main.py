@@ -1,15 +1,17 @@
+import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.comfyui_client import check_health as comfy_health_check
-from app.database import AsyncSessionLocal, get_session, init_db
+from app.database import AsyncSessionLocal, engine, get_session, init_db
 from app.models import GenerationTask, Style, TrainingJob
 from app.progress import ProgressHub
 from app.schemas import (
@@ -17,12 +19,14 @@ from app.schemas import (
     GenerationTaskRead,
     StyleCreate,
     StyleRead,
+    StyleUpdate,
     TaskListItem,
     TrainingJobCreate,
     TrainingJobRead,
 )
 from app.task_runner import run_generation_task, run_training_job
 
+logger = logging.getLogger(__name__)
 
 progress_hub = ProgressHub()
 
@@ -31,11 +35,55 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = PROJECT_ROOT / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+async def _migrate_columns() -> None:
+    """为已有表添加新列（SQLite 不支持 ALTER TABLE ADD COLUMN IF NOT EXISTS，手动检查）。"""
+    migrations: list[tuple[str, str, str]] = [
+        # (表名, 列名, DDL 定义)
+        ("styles", "is_base", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("styles", "is_trained", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("generation_tasks", "input_image", "VARCHAR(512)"),
+        ("training_jobs", "output_lora_path", "VARCHAR(512)"),
+    ]
+    async with engine.begin() as conn:
+        for table, column, definition in migrations:
+            # 检查列是否已存在
+            result = await conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_columns = {row[1] for row in result.fetchall()}
+            if column not in existing_columns:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                )
+                logger.info("已迁移: %s.%s", table, column)
+
+
+async def _init_base_style() -> None:
+    """确保系统中存在基础风格（开箱即用，无 LoRA）。"""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Style).where(Style.is_base == True)  # noqa: E712
+        )
+        if not result.scalar_one_or_none():
+            base_style = Style(
+                name="基础风格",
+                type="ui",
+                is_base=True,
+                is_trained=False,
+                # lora_path=None, trigger_words=None, preview_image=None
+            )
+            session.add(base_style)
+            await session.commit()
+            logger.info("已创建基础风格")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    await _migrate_columns()
+    await _init_base_style()
     yield
 
 
@@ -87,6 +135,44 @@ async def create_style(
     return item
 
 
+@app.put("/api/styles/{style_id}", response_model=StyleRead)
+async def update_style(
+    style_id: int,
+    payload: StyleUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> Style:
+    result = await session.execute(select(Style).where(Style.id == style_id))
+    style = result.scalar_one_or_none()
+    if not style:
+        raise HTTPException(status_code=404, detail="风格不存在")
+
+    # 部分更新：仅更新非 None 字段
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(style, field, value)
+
+    await session.commit()
+    await session.refresh(style)
+    return style
+
+
+@app.delete("/api/styles/{style_id}")
+async def delete_style(
+    style_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(select(Style).where(Style.id == style_id))
+    style = result.scalar_one_or_none()
+    if not style:
+        raise HTTPException(status_code=404, detail="风格不存在")
+    if style.is_base:
+        raise HTTPException(status_code=400, detail="不能删除基础风格")
+
+    await session.delete(style)
+    await session.commit()
+    return {"detail": "已删除"}
+
+
 # ---------- 训练中心 ----------
 
 
@@ -95,7 +181,24 @@ async def start_training(
     payload: TrainingJobCreate,
     session: AsyncSession = Depends(get_session),
 ) -> TrainingJob:
-    job = TrainingJob(**payload.model_dump(), status="queued", progress=0.0)
+    # 1. 先创建关联的风格（状态：未训练）
+    style = Style(
+        name=payload.style_name,
+        type=payload.style_type,
+        is_base=False,
+        is_trained=False,
+    )
+    session.add(style)
+    await session.flush()  # 获取 style.id
+
+    # 2. 创建训练任务，关联风格
+    job = TrainingJob(
+        style_id=style.id,
+        dataset_path=payload.dataset_path,
+        params=payload.params,
+        status="queued",
+        progress=0.0,
+    )
     session.add(job)
     await session.commit()
     await session.refresh(job)
@@ -119,6 +222,39 @@ async def get_training_job(
     if not job:
         raise HTTPException(status_code=404, detail="training job not found")
     return job
+
+
+# ---------- 文件上传 ----------
+
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@app.post("/api/upload")
+async def upload_image(file: UploadFile) -> dict:
+    """上传参考图片，返回可访问的 URL 路径。"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名为空")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件格式: {ext}，支持 {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="文件大小超过 10MB 限制")
+
+    # 生成唯一文件名，避免冲突
+    unique_name = f"{uuid.uuid4().hex[:12]}{ext}"
+    dest = UPLOADS_DIR / unique_name
+    dest.write_bytes(content)
+
+    url_path = f"/uploads/{unique_name}"
+    logger.info("已上传文件: %s -> %s", file.filename, url_path)
+    return {"url": url_path, "filename": unique_name}
 
 
 # ---------- 生成中心 ----------
@@ -218,6 +354,14 @@ if OUTPUTS_DIR.exists():
         "/outputs",
         StaticFiles(directory=str(OUTPUTS_DIR)),
         name="outputs-static",
+    )
+
+# 上传文件静态目录
+if UPLOADS_DIR.exists():
+    app.mount(
+        "/uploads",
+        StaticFiles(directory=str(UPLOADS_DIR)),
+        name="uploads-static",
     )
 
 # React 构建产物静态资源 (CSS, JS, images)

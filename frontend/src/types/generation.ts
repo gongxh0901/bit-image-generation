@@ -10,6 +10,7 @@ export interface GenerationTask {
   style_id: number | null;
   type: GenerationType;
   prompt: string;
+  input_image: string | null;
   status: TaskStatus;
   output_paths: string[];
   created_at: string;
@@ -20,6 +21,7 @@ export interface GenerationTaskCreate {
   style_id?: number | null;
   type: GenerationType;
   prompt: string;
+  input_image?: string | null;
 }
 
 /** 生成结果（用于前端展示） */

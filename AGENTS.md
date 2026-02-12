@@ -50,6 +50,7 @@
 │   └── package.json
 ├── ComfyUI/              # 推理引擎（外部依赖）
 ├── outputs/              # 生成结果目录
+├── uploads/              # 上传参考图目录（img2img）
 └── docs/plans/           # 设计文档
 ```
 
@@ -64,9 +65,9 @@
 | 异步任务 | `backend/app/task_runner.py` | 训练和生成任务执行器 |
 | 实时进度 | `backend/app/progress.py` | WebSocket 广播中心 |
 | 工作流模板 | `backend/app/workflows/` | txt2img/img2img JSON |
-| 前端页面 | `frontend/src/pages/` | Home（三栏工作台）+ Training（训练中心） |
+| 前端页面 | `frontend/src/pages/` | Home（三栏工作台）+ Training（训练中心）+ History（历史任务） |
 | 前端组件 | `frontend/src/components/` | Layout、Header 等公共组件 |
-| 前端状态 | `frontend/src/stores/` | Zustand: style/generation/training |
+| 前端状态 | `frontend/src/stores/` | Zustand: style/generation/training/task |
 | 前端 API | `frontend/src/services/` | Axios 封装的后端接口 |
 
 ## CONVENTIONS
@@ -83,11 +84,17 @@
 - SQLite + aiosqlite（开发）
 - JSON 字段存储可变参数（`params`, `output_paths`）
 - 外键关联：`style_id` 可选（可空）
+- Style：`is_base`（是否基础风格）、`is_trained`（是否已训练）
+- GenerationTask：`input_image`（可空，img2img 参考图路径）
+- TrainingJob：`output_lora_path`（可空，训练产出 LoRA 路径）
+- 启动时 `_migrate_columns()` 自动添加新列到现有 SQLite 表
 
 ### API Patterns
 - Fire-and-forget: `POST /api/generate` 立即返回，后台执行
 - WebSocket 进度：`/ws/progress` 推送实时状态
-- 静态文件：`/outputs/` 托管生成图片
+- 静态文件：`/outputs/` 托管生成图片，`/uploads/` 托管上传参考图
+- 文件上传：`POST /api/upload` 上传参考图用于 img2img
+- 风格 CRUD：`PUT /api/styles/{id}` 更新，`DELETE /api/styles/{id}` 删除（基础风格不可删）
 
 ### Shell Scripts (macOS)
 - `set -euo pipefail` 严格模式
@@ -114,7 +121,7 @@
 - **中文注释**: 代码和文档使用中文
 - **环境变量**: `COMFYUI_URL`, `DATABASE_URL` 可配置
 - **模板工作流**: ComfyUI JSON 使用 `{{placeholder}}` 占位符替换
-- **单文件前端**: 零构建工具，纯 HTML/CSS/JS
+- **前端技术栈**: React + TypeScript + Ant Design 5（Vite 构建）
 
 ## COMMANDS
 
@@ -171,5 +178,6 @@ uvicorn app.main:app --reload
 
 - **模型路径**: `ComfyUI/models/checkpoints/` 和 `loras/`
 - **输出路径**: 生成图片自动复制到 `outputs/` 并可通过 `/outputs/{filename}` 访问
-- **训练模拟**: `_training_job_worker` 目前仅模拟进度，真实训练需集成 Kohya_ss
-- **img2img 限制**: `input_image` 参数为占位符，真实实现需文件上传
+- **训练流程**: 训练 API 接收 `style_name`、`style_type`，自动创建风格后启动训练；完成后自动更新风格 `lora_path` 和 `is_trained=True`。真实训练需集成 Kohya_ss
+- **img2img**: 上传参考图 → 保存到 `uploads/` → 复制到 ComfyUI input → 工作流使用真实路径
+- **基础风格**: 启动时自动创建“基础风格”（`is_base=True`），不可删除，使用 SDXL Base 无自定义 LoRA

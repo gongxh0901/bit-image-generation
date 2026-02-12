@@ -78,6 +78,34 @@
 .itemContent {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+}
+
+.actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.item:hover .actions {
+  opacity: 1;
+}
+
+.actionBtn {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  color: var(--text-secondary) !important;
+}
+
+.actionBtn:hover {
+  color: var(--color-primary) !important;
+  background: rgba(59, 130, 246, 0.1) !important;
+}
+
+.baseItem {
+  border-color: rgba(250, 173, 20, 0.15) !important;
 }
 
 .itemIcon {
@@ -90,6 +118,11 @@
   justify-content: center;
   background: rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-sm);
+}
+
+.baseIcon {
+  color: #faad14 !important;
+  background: rgba(250, 173, 20, 0.1) !important;
 }
 
 .itemName {

@@ -104,6 +104,23 @@ async def _training_job_worker(
                 job.progress = float(p)
                 if p >= 100:
                     job.status = "completed"
+                    # 模拟训练产出路径（真实训练时由 Kohya_ss 输出）
+                    job.output_lora_path = f"trained_style_{job.style_id}.safetensors"
+
+                    # ---- 训练完成：更新关联的风格 ----
+                    if job.style_id:
+                        style_result = await session.execute(
+                            select(Style).where(Style.id == job.style_id)
+                        )
+                        style = style_result.scalar_one_or_none()
+                        if style:
+                            style.lora_path = job.output_lora_path
+                            style.is_trained = True
+                            logger.info(
+                                "训练完成，已更新风格 %s: lora_path=%s",
+                                style.id,
+                                style.lora_path,
+                            )
                 await session.commit()
 
             await progress_hub.broadcast(
@@ -177,6 +194,7 @@ async def _generation_task_worker(
 
             task_type = task.type
             task_prompt = task.prompt
+            task_input_image = task.input_image
 
         await progress_hub.broadcast(
             {
@@ -194,9 +212,23 @@ async def _generation_task_worker(
         client_id = str(uuid.uuid4())
 
         if task_type == "img2img":
+            # 将上传的图片复制到 ComfyUI input 目录
+            input_image_name = "input.png"  # 回退默认值
+            if task_input_image:
+                # task_input_image 是 URL 路径如 /uploads/xxxx.png
+                upload_path = Path(__file__).resolve().parent.parent.parent / task_input_image.lstrip("/")
+                comfyui_input_dir = Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "input"
+                comfyui_input_dir.mkdir(parents=True, exist_ok=True)
+
+                if upload_path.exists():
+                    input_image_name = f"ref_{task_id}_{upload_path.name}"
+                    dest = comfyui_input_dir / input_image_name
+                    shutil.copy2(str(upload_path), str(dest))
+                    logger.info("已复制参考图到 ComfyUI input: %s", input_image_name)
+
             workflow = build_img2img_prompt(
                 positive_prompt=positive,
-                input_image="input.png",  # placeholder — real img2img needs upload
+                input_image=input_image_name,
                 lora_name=lora_name,
                 checkpoint=checkpoint,
             )

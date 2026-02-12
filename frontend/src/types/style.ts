@@ -9,6 +9,8 @@ export interface Style {
   lora_path: string | null;
   trigger_words: string | null;
   preview_image: string | null;
+  is_base: boolean;
+  is_trained: boolean;
   created_at: string;
 }
 
@@ -19,4 +21,6 @@ export interface StyleCreate {
   lora_path?: string | null;
   trigger_words?: string | null;
   preview_image?: string | null;
+  is_base?: boolean;
+  is_trained?: boolean;
 }
