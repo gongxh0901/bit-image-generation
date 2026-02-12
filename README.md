@@ -4,8 +4,14 @@
 
 ## 快速开始
 
+### macOS
 ```bash
-./start.sh
+./scripts/macos/start.sh
+```
+
+### Windows (PowerShell)
+```powershell
+.\scripts\windows\start.ps1
 ```
 
 启动后访问:
@@ -17,7 +23,15 @@
 
 ```
 AI/
-├── start.sh                 # 一键启动脚本
+├── scripts/                 # 平台启动脚本
+│   ├── macos/               # macOS 脚本 (.sh)
+│   │   ├── start.sh
+│   │   ├── stop.sh
+│   │   └── deploy.sh
+│   └── windows/             # Windows 脚本 (.ps1)
+│       ├── start.ps1
+│       ├── stop.ps1
+│       └── deploy.ps1
 ├── backend/                 # FastAPI 后端
 │   ├── app/
 │   │   ├── main.py

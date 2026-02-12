@@ -6,7 +6,7 @@ set -euo pipefail
 #  同时启动 ComfyUI (8188) + FastAPI 后端 (8000)
 # ============================================
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 COMFYUI_DIR="$ROOT_DIR/ComfyUI"
 BACKEND_VENV="$BACKEND_DIR/.venv"
