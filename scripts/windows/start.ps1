@@ -47,27 +47,57 @@ try {
     Write-Host "  游戏素材生成系统 — 启动中 …" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
 
-    # ---------- 1. 检查 Python ----------
+    # ---------- 1. 检查 Python (>= 3.10) ----------
     $PYTHON = $null
-    $pythonCommands = @("python3.12", "python3.11", "python3", "python")
+    $pythonCommands = @("python3.12", "python3.11", "python3.10", "python3", "python")
     
     foreach ($cmd in $pythonCommands) {
         $found = Get-Command $cmd -ErrorAction SilentlyContinue
         if ($found) {
-            $PYTHON = $cmd
-            break
+            $pyMinor = & $cmd -c "import sys; print(sys.version_info.minor)"
+            $pyMajor = & $cmd -c "import sys; print(sys.version_info.major)"
+            if ([int]$pyMajor -eq 3 -and [int]$pyMinor -ge 10) {
+                $PYTHON = $cmd
+                break
+            }
         }
     }
 
     if (-not $PYTHON) {
-        Write-Host "❌ 找不到 Python，请先安装 Python 3.10+" -ForegroundColor Red
+        Write-Host "❌ 找不到 Python 3.10+，请先安装" -ForegroundColor Red
+        Write-Host "   当前系统 Python 版本过低，ComfyUI 要求 Python >= 3.10" -ForegroundColor Red
+        Write-Host "   下载地址: https://www.python.org/downloads/" -ForegroundColor Yellow
         exit 1
     }
 
     $PY_VER = & $PYTHON -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
     Write-Host "✔ 使用 Python: $PYTHON ($PY_VER)" -ForegroundColor Green
 
+    # ---------- 辅助: 检查虚拟环境 Python 版本是否匹配 ----------
+    function Check-VenvPython {
+        param([string]$VenvDir, [string]$Label)
+        if (Test-Path $VenvDir) {
+            $venvPython = Join-Path $VenvDir "Scripts\python.exe"
+            if (Test-Path $venvPython) {
+                try {
+                    $venvPyVer = & $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+                    if ($venvPyVer -ne $PY_VER) {
+                        Write-Host "⚠️  $Label 虚拟环境 Python 版本不匹配 ($venvPyVer → $PY_VER)，重新创建 …" -ForegroundColor Yellow
+                        Remove-Item -Recurse -Force $VenvDir
+                    }
+                } catch {
+                    Write-Host "⚠️  $Label 虚拟环境损坏，重新创建 …" -ForegroundColor Yellow
+                    Remove-Item -Recurse -Force $VenvDir
+                }
+            } else {
+                Write-Host "⚠️  $Label 虚拟环境损坏，重新创建 …" -ForegroundColor Yellow
+                Remove-Item -Recurse -Force $VenvDir
+            }
+        }
+    }
+
     # ---------- 2. 后端虚拟环境 ----------
+    Check-VenvPython -VenvDir $BACKEND_VENV -Label "后端"
     if (-not (Test-Path $BACKEND_VENV)) {
         Write-Host "→ 创建后端虚拟环境 …"
         & $PYTHON -m venv $BACKEND_VENV
@@ -88,6 +118,7 @@ try {
         exit 1
     }
 
+    Check-VenvPython -VenvDir $COMFYUI_VENV -Label "ComfyUI"
     if (-not (Test-Path $COMFYUI_VENV)) {
         Write-Host "→ 创建 ComfyUI 虚拟环境 …"
         & $PYTHON -m venv $COMFYUI_VENV

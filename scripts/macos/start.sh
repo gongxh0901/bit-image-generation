@@ -27,24 +27,44 @@ echo "========================================"
 echo "  游戏素材生成系统 — 启动中 …"
 echo "========================================"
 
-# ---------- 1. 检查 Python ----------
+# ---------- 1. 检查 Python (>= 3.10) ----------
 PYTHON=""
-for cmd in python3.12 python3.11 python3 python; do
+for cmd in python3.12 python3.11 python3.10 python3 python; do
   if command -v "$cmd" &>/dev/null; then
-    PYTHON="$cmd"
-    break
+    PY_MINOR=$($cmd -c 'import sys; print(sys.version_info.minor)')
+    PY_MAJOR=$($cmd -c 'import sys; print(sys.version_info.major)')
+    if [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -ge 10 ]; then
+      PYTHON="$cmd"
+      break
+    fi
   fi
 done
 
 if [ -z "$PYTHON" ]; then
-  echo "❌ 找不到 Python，请先安装 Python 3.10+"
+  echo "❌ 找不到 Python 3.10+，请先安装"
+  echo "   当前系统 Python 版本过低，ComfyUI 要求 Python >= 3.10"
+  echo "   推荐安装: brew install python@3.11"
   exit 1
 fi
 
 PY_VER=$($PYTHON -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo "✔ 使用 Python: $PYTHON ($PY_VER)"
 
+# ---------- 辅助: 检查虚拟环境 Python 版本是否匹配 ----------
+check_venv_python() {
+  local venv_dir="$1"
+  local label="$2"
+  if [ -d "$venv_dir" ]; then
+    VENV_PY_VER=$("$venv_dir/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "unknown")
+    if [ "$VENV_PY_VER" != "$PY_VER" ]; then
+      echo "⚠️  $label 虚拟环境 Python 版本不匹配 ($VENV_PY_VER → $PY_VER)，重新创建 …"
+      rm -rf "$venv_dir"
+    fi
+  fi
+}
+
 # ---------- 2. 后端虚拟环境 ----------
+check_venv_python "$BACKEND_VENV" "后端"
 if [ ! -d "$BACKEND_VENV" ]; then
   echo "→ 创建后端虚拟环境 …"
   $PYTHON -m venv "$BACKEND_VENV"
@@ -63,6 +83,7 @@ if [ ! -d "$COMFYUI_DIR" ]; then
   exit 1
 fi
 
+check_venv_python "$COMFYUI_VENV" "ComfyUI"
 if [ ! -d "$COMFYUI_VENV" ]; then
   echo "→ 创建 ComfyUI 虚拟环境 …"
   $PYTHON -m venv "$COMFYUI_VENV"

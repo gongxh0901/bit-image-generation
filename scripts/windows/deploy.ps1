@@ -104,19 +104,24 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# 检查 Python
+# 检查 Python (>= 3.10)
 $PYTHON = $null
-$pythonCommands = @("python3.12", "python3.11", "python3", "python")
+$pythonCommands = @("python3.12", "python3.11", "python3.10", "python3", "python")
 foreach ($cmd in $pythonCommands) {
     $found = Get-Command $cmd -ErrorAction SilentlyContinue
     if ($found) {
-        $PYTHON = $cmd
-        break
+        $pyMinor = & $cmd -c "import sys; print(sys.version_info.minor)"
+        $pyMajor = & $cmd -c "import sys; print(sys.version_info.major)"
+        if ([int]$pyMajor -eq 3 -and [int]$pyMinor -ge 10) {
+            $PYTHON = $cmd
+            break
+        }
     }
 }
 
 if (-not $PYTHON) {
-    Write-Error "错误: 找不到 Python，请先安装 Python 3.10+"
+    Write-Error "错误: 找不到 Python 3.10+，当前系统 Python 版本过低"
+    Write-Host "   ComfyUI 要求 Python >= 3.10"
     Write-Host "   下载地址: https://www.python.org/downloads/"
     exit 1
 }
