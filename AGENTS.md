@@ -17,7 +17,7 @@
 ## OVERVIEW
 基于 SDXL + ComfyUI + FastAPI 的游戏 UI/VFX 素材批量生成系统，适配 Mac mini M2。
 
-**Core Stack**: FastAPI (async) + SQLAlchemy + ComfyUI + SDXL Lightning
+**Core Stack**: React + TypeScript + Ant Design 5 | FastAPI (async) + SQLAlchemy + ComfyUI + SDXL Lightning
 
 ## STRUCTURE
 
@@ -36,8 +36,18 @@
 │   ├── app/              # 应用代码
 │   ├── requirements.txt
 │   └── README.md
-├── frontend/             # 静态 HTML 前端（暗色主题）
-│   └── index.html
+├── frontend/             # React + TypeScript 前端
+│   ├── src/              # 源代码
+│   │   ├── components/   # 公共组件（Layout 等）
+│   │   ├── pages/        # 页面（Home, Training）
+│   │   ├── stores/       # Zustand 状态管理
+│   │   ├── hooks/        # 自定义 Hooks
+│   │   ├── services/     # API 服务层
+│   │   ├── types/        # TypeScript 类型
+│   │   ├── utils/        # 工具函数
+│   │   └── theme/        # Ant Design 暗色主题
+│   ├── dist/             # 构建产物
+│   └── package.json
 ├── ComfyUI/              # 推理引擎（外部依赖）
 ├── outputs/              # 生成结果目录
 └── docs/plans/           # 设计文档
@@ -54,7 +64,10 @@
 | 异步任务 | `backend/app/task_runner.py` | 训练和生成任务执行器 |
 | 实时进度 | `backend/app/progress.py` | WebSocket 广播中心 |
 | 工作流模板 | `backend/app/workflows/` | txt2img/img2img JSON |
-| 前端界面 | `frontend/index.html` | 单文件零依赖实现 |
+| 前端页面 | `frontend/src/pages/` | Home（三栏工作台）+ Training（训练中心） |
+| 前端组件 | `frontend/src/components/` | Layout、Header 等公共组件 |
+| 前端状态 | `frontend/src/stores/` | Zustand: style/generation/training |
+| 前端 API | `frontend/src/services/` | Axios 封装的后端接口 |
 
 ## CONVENTIONS
 

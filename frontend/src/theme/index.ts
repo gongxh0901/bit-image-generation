@@ -1,0 +1,1 @@
+export { darkThemeConfig } from './darkTheme';

@@ -15,9 +15,17 @@
 ```
 
 启动后访问:
-- **前端界面**: http://127.0.0.1:8000
+- **前端界面**: http://127.0.0.1:8000（生产） / http://127.0.0.1:3000（开发）
 - **API 文档**: http://127.0.0.1:8000/docs
 - **ComfyUI**: http://127.0.0.1:8188
+
+### 前端开发
+```bash
+cd frontend
+npm install
+npm run dev    # 开发服务器 (http://localhost:3000)
+npm run build  # 生产构建 (输出到 dist/)
+```
 
 ## 项目结构
 
@@ -39,8 +47,10 @@ AI/
 │   │   ├── task_runner.py
 │   │   └── workflows/       # ComfyUI 工作流模板
 │   └── requirements.txt
-├── frontend/                # Web 前端 (静态页面)
-│   └── index.html
+├── frontend/                # React + TypeScript 前端
+│   ├── src/                 # 源代码
+│   ├── dist/                # 构建产物
+│   └── package.json
 ├── ComfyUI/                 # 推理引擎
 │   └── models/
 │       ├── checkpoints/     # SDXL base
@@ -53,7 +63,7 @@ AI/
 
 | 组件 | 技术 |
 |------|------|
-| 前端 | 原生 HTML/JS (暗色主题) |
+| 前端 | React 18 + TypeScript + Ant Design 5 + Zustand |
 | 后端 | FastAPI + SQLite + WebSocket |
 | 推理 | ComfyUI + SDXL + Lightning LoRA |
 | 加速 | 4步快速生成 (SDXL Lightning) |

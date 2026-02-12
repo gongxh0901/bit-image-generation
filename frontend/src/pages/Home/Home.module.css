@@ -1,0 +1,33 @@
+.container {
+  display: flex;
+  height: 100%;
+  gap: 1px;
+  background: var(--border-color);
+}
+
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.results {
+  width: 340px;
+  min-width: 340px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

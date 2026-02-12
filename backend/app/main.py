@@ -194,14 +194,22 @@ async def ws_progress(websocket: WebSocket) -> None:
 
 # =====================  静态文件托管  =====================
 
+# React 构建产物目录 (frontend/dist)
+FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
+
 
 @app.get("/")
 async def serve_index():
-    """Serve the frontend index.html at root."""
+    """Serve the frontend index.html (React SPA entry)."""
+    # 优先使用 React 构建产物
+    dist_index = FRONTEND_DIST_DIR / "index.html"
+    if dist_index.exists():
+        return FileResponse(str(dist_index))
+    # 回退到旧版 frontend/index.html
     index = FRONTEND_DIR / "index.html"
     if index.exists():
         return FileResponse(str(index))
-    return {"detail": "frontend not found, place index.html in ../frontend/"}
+    return {"detail": "frontend not found, run 'npm run build' in frontend/"}
 
 
 # 输出图片静态目录
@@ -212,7 +220,15 @@ if OUTPUTS_DIR.exists():
         name="outputs-static",
     )
 
-# 前端静态目录
+# React 构建产物静态资源 (CSS, JS, images)
+if FRONTEND_DIST_DIR.exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST_DIR / "assets")),
+        name="frontend-assets",
+    )
+
+# 前端静态目录（兼容旧版）
 if FRONTEND_DIR.exists():
     app.mount(
         "/static",

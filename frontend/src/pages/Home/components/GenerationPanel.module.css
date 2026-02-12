@@ -1,0 +1,90 @@
+.container {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: 40px;
+}
+
+.emptyIcon {
+  font-size: 64px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  opacity: 0.4;
+}
+
+.emptyTitle {
+  color: var(--text-secondary) !important;
+  margin-bottom: 8px !important;
+}
+
+.styleInfo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.triggerWords {
+  font-size: 12px !important;
+}
+
+.formCard {
+  background: var(--bg-secondary) !important;
+}
+
+.uploader {
+  background: var(--bg-primary) !important;
+}
+
+.prompt textarea {
+  font-family: 'Noto Sans SC', sans-serif !important;
+  font-size: 14px !important;
+}
+
+.submitBtn {
+  margin-top: 8px;
+  height: 44px !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  border-radius: var(--radius-md) !important;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3) !important;
+}
+
+.submitBtn:hover {
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45) !important;
+  transform: translateY(-1px);
+}
+
+.progressCard {
+  background: var(--bg-secondary) !important;
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.progressHint {
+  font-size: 12px !important;
+  margin-top: 8px;
+  display: block;
+}

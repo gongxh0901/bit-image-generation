@@ -1,0 +1,71 @@
+.layout {
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 0 24px !important;
+  background: var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--border-color);
+  height: 56px !important;
+  line-height: 56px !important;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 22px;
+  color: var(--color-primary);
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4));
+}
+
+.title {
+  margin: 0 !important;
+  color: var(--text-primary) !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+.nav :global(.ant-menu-item) {
+  color: var(--text-secondary) !important;
+  font-size: 14px;
+}
+
+.nav :global(.ant-menu-item-selected) {
+  color: var(--color-primary) !important;
+}
+
+.headerRight {
+  flex-shrink: 0;
+}
+
+.wsText {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
