@@ -1,6 +1,6 @@
 # ============================================
 #  游戏素材生成系统 — 一键部署脚本 (Windows)
-#  自动下载 ComfyUI + AI 模型文件
+#  自动下载 ComfyUI + Flux.1 Schnell 模型 + 插件
 # ============================================
 
 param(
@@ -13,8 +13,9 @@ $ErrorActionPreference = "Stop"
 # 获取脚本所在目录
 $ROOT_DIR = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 $COMFYUI_DIR = Join-Path $ROOT_DIR "ComfyUI"
-$CKPT_DIR = Join-Path $COMFYUI_DIR "models\checkpoints"
-$LORA_DIR = Join-Path $COMFYUI_DIR "models\loras"
+$UNET_DIR = Join-Path $COMFYUI_DIR "models\unet"
+$CLIP_DIR = Join-Path $COMFYUI_DIR "models\clip"
+$VAE_DIR = Join-Path $COMFYUI_DIR "models\vae"
 $CONTROLNET_DIR = Join-Path $COMFYUI_DIR "models\controlnet"
 $CUSTOM_NODES_DIR = Join-Path $COMFYUI_DIR "custom_nodes"
 
@@ -75,7 +76,7 @@ function Download-File {
 
 # 检查磁盘空间
 function Check-DiskSpace {
-    $requiredGB = 12
+    $requiredGB = 15
     $drive = Get-Item $ROOT_DIR | Select-Object -ExpandProperty PSDrive
     $availableGB = [math]::Floor($drive.Free / 1GB)
     
@@ -84,7 +85,7 @@ function Check-DiskSpace {
         Write-Host "   需要: ${requiredGB}GB+"
         Write-Host "   可用: ${availableGB}GB"
         Write-Host ""
-        Write-Host "模型文件较大，请确保有足够的磁盘空间。"
+        Write-Host "Flux 模型文件较大，请确保有足够的磁盘空间。"
         exit 1
     }
     
@@ -161,8 +162,9 @@ if (-not $SkipComfyUI) {
 }
 
 # ---------- 4. 创建模型目录 ----------
-if (-not (Test-Path $CKPT_DIR)) { New-Item -ItemType Directory -Path $CKPT_DIR -Force | Out-Null }
-if (-not (Test-Path $LORA_DIR)) { New-Item -ItemType Directory -Path $LORA_DIR -Force | Out-Null }
+if (-not (Test-Path $UNET_DIR)) { New-Item -ItemType Directory -Path $UNET_DIR -Force | Out-Null }
+if (-not (Test-Path $CLIP_DIR)) { New-Item -ItemType Directory -Path $CLIP_DIR -Force | Out-Null }
+if (-not (Test-Path $VAE_DIR)) { New-Item -ItemType Directory -Path $VAE_DIR -Force | Out-Null }
 if (-not (Test-Path $CONTROLNET_DIR)) { New-Item -ItemType Directory -Path $CONTROLNET_DIR -Force | Out-Null }
 
 # ---------- 5. 下载模型文件 ----------
@@ -170,44 +172,76 @@ if (-not $SkipModels) {
     Write-Info "检查模型文件 …"
     Write-Host ""
     Write-Host "注意: 模型文件较大，下载可能需要一些时间"
-    Write-Host "      SDXL Base: ~6.9GB"
-    Write-Host "      SDXL Lightning LoRA: ~300MB"
-    Write-Host "      ControlNet Union ProMax: ~2.5GB"
+    Write-Host "      Flux.1 Schnell GGUF: ~7.5GB"
+    Write-Host "      CLIP-L: ~250MB"
+    Write-Host "      T5-XXL: ~9.5GB"
+    Write-Host "      Flux VAE: ~350MB"
+    Write-Host "      ControlNet Union (可选): ~3GB"
     Write-Host ""
 
-    # SDXL Base 1.0
-    $SDXL_URL = "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-    $SDXL_FILE = Join-Path $CKPT_DIR "sd_xl_base_1.0.safetensors"
+    # Flux.1 Schnell GGUF Q5_K_S
+    $FLUX_UNET_URL = "https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q5_K_S.gguf"
+    $FLUX_UNET_FILE = Join-Path $UNET_DIR "flux1-schnell-Q5_K_S.gguf"
 
-    if (-not (Download-File -Url $SDXL_URL -Output $SDXL_FILE)) {
+    if (-not (Download-File -Url $FLUX_UNET_URL -Output $FLUX_UNET_FILE)) {
         Write-Host ""
-        Write-Warning "SDXL Base 下载失败"
+        Write-Warning "Flux.1 Schnell GGUF 下载失败"
         Write-Host "   你可以稍后手动下载:"
-        Write-Host "   Invoke-WebRequest -Uri '$SDXL_URL' -OutFile '$SDXL_FILE'"
+        Write-Host "   Invoke-WebRequest -Uri '$FLUX_UNET_URL' -OutFile '$FLUX_UNET_FILE'"
     }
     Write-Host ""
 
-    # SDXL Lightning 4-step LoRA
-    $LORA_URL = "https://huggingface.co/ByteDance/SDXL-Lightning/resolve/main/sdxl_lightning_4step_lora.safetensors"
-    $LORA_FILE = Join-Path $LORA_DIR "sdxl_lightning_4step_lora.safetensors"
+    # CLIP-L
+    $CLIP_L_URL = "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
+    $CLIP_L_FILE = Join-Path $CLIP_DIR "clip_l.safetensors"
 
-    if (-not (Download-File -Url $LORA_URL -Output $LORA_FILE)) {
+    if (-not (Download-File -Url $CLIP_L_URL -Output $CLIP_L_FILE)) {
         Write-Host ""
-        Write-Warning "SDXL Lightning LoRA 下载失败"
+        Write-Warning "CLIP-L 编码器下载失败"
         Write-Host "   你可以稍后手动下载:"
-        Write-Host "   Invoke-WebRequest -Uri '$LORA_URL' -OutFile '$LORA_FILE'"
+        Write-Host "   Invoke-WebRequest -Uri '$CLIP_L_URL' -OutFile '$CLIP_L_FILE'"
     }
     Write-Host ""
 
-    # ControlNet Union ProMax
-    $CONTROLNET_URL = "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
-    $CONTROLNET_FILE = Join-Path $CONTROLNET_DIR "diffusion_pytorch_model_promax.safetensors"
+    # T5-XXL
+    $T5XXL_URL = "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors"
+    $T5XXL_FILE = Join-Path $CLIP_DIR "t5xxl_fp16.safetensors"
 
-    if (-not (Download-File -Url $CONTROLNET_URL -Output $CONTROLNET_FILE)) {
+    if (-not (Download-File -Url $T5XXL_URL -Output $T5XXL_FILE)) {
         Write-Host ""
-        Write-Warning "ControlNet Union ProMax 下载失败"
+        Write-Warning "T5-XXL 编码器下载失败"
         Write-Host "   你可以稍后手动下载:"
-        Write-Host "   Invoke-WebRequest -Uri '$CONTROLNET_URL' -OutFile '$CONTROLNET_FILE'"
+        Write-Host "   Invoke-WebRequest -Uri '$T5XXL_URL' -OutFile '$T5XXL_FILE'"
+    }
+    Write-Host ""
+
+    # Flux VAE
+    $FLUX_VAE_URL = "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors"
+    $FLUX_VAE_FILE = Join-Path $VAE_DIR "ae.safetensors"
+
+    if (-not (Download-File -Url $FLUX_VAE_URL -Output $FLUX_VAE_FILE)) {
+        Write-Host ""
+        Write-Warning "Flux VAE 下载失败"
+        Write-Host "   你可以稍后手动下载:"
+        Write-Host "   Invoke-WebRequest -Uri '$FLUX_VAE_URL' -OutFile '$FLUX_VAE_FILE'"
+    }
+    Write-Host ""
+
+    # ControlNet Union (可选)
+    Write-Info "ControlNet Union 为可选模型，是否下载？(约 3GB)"
+    $downloadCN = Read-Host "下载 ControlNet Union? [y/N]"
+    if ($downloadCN -match "^[Yy]$") {
+        $CONTROLNET_URL = "https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union/resolve/main/diffusion_pytorch_model.safetensors"
+        $CONTROLNET_FILE = Join-Path $CONTROLNET_DIR "instantx-flux-union-controlnet.safetensors"
+        
+        if (-not (Download-File -Url $CONTROLNET_URL -Output $CONTROLNET_FILE)) {
+            Write-Host ""
+            Write-Warning "ControlNet Union 下载失败"
+            Write-Host "   你可以稍后手动下载:"
+            Write-Host "   Invoke-WebRequest -Uri '$CONTROLNET_URL' -OutFile '$CONTROLNET_FILE'"
+        }
+    } else {
+        Write-Info "跳过 ControlNet Union 下载"
     }
     Write-Host ""
 }
@@ -216,30 +250,53 @@ if (-not $SkipModels) {
 Write-Info "检查 ComfyUI 插件 …"
 Write-Host ""
 
-# ComfyUI-layerdiffuse (透明通道)
-$LAYERDIFFUSE_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-layerdiffuse"
-if (Test-Path (Join-Path $LAYERDIFFUSE_DIR ".git")) {
-    Write-Success "ComfyUI-layerdiffuse 已存在，跳过克隆"
+# ComfyUI-GGUF (必需)
+$GGUF_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-GGUF"
+if (Test-Path (Join-Path $GGUF_DIR ".git")) {
+    Write-Success "ComfyUI-GGUF 已存在，跳过克隆"
 } else {
-    Write-Info "正在克隆 ComfyUI-layerdiffuse …"
+    Write-Info "正在克隆 ComfyUI-GGUF …"
     try {
-        git clone https://github.com/huchenlei/ComfyUI-layerdiffuse.git $LAYERDIFFUSE_DIR
-        Write-Success "ComfyUI-layerdiffuse 克隆完成"
+        git clone https://github.com/city96/ComfyUI-GGUF.git $GGUF_DIR
+        Write-Success "ComfyUI-GGUF 克隆完成"
     } catch {
-        Write-Warning "ComfyUI-layerdiffuse 克隆失败: $_"
+        Write-Warning "ComfyUI-GGUF 克隆失败: $_"
     }
 }
 
-# 安装 layerdiffuse 依赖
-$LAYERDIFFUSE_REQ = Join-Path $LAYERDIFFUSE_DIR "requirements.txt"
-if (Test-Path $LAYERDIFFUSE_REQ) {
-    Write-Info "安装 layerdiffuse 依赖 …"
-    & pip install -r $LAYERDIFFUSE_REQ --quiet
-    Write-Success "layerdiffuse 依赖安装完成"
+# 安装 GGUF 依赖
+$GGUF_REQ = Join-Path $GGUF_DIR "requirements.txt"
+if (Test-Path $GGUF_REQ) {
+    Write-Info "安装 ComfyUI-GGUF 依赖 …"
+    & pip install -r $GGUF_REQ --quiet
+    Write-Success "ComfyUI-GGUF 依赖安装完成"
 }
 Write-Host ""
 
-# comfyui_controlnet_aux (预处理器)
+# ComfyUI-RMBG (BiRefNet 抠图，必需)
+$RMBG_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-RMBG"
+if (Test-Path (Join-Path $RMBG_DIR ".git")) {
+    Write-Success "ComfyUI-RMBG 已存在，跳过克隆"
+} else {
+    Write-Info "正在克隆 ComfyUI-RMBG …"
+    try {
+        git clone https://github.com/1038lab/ComfyUI-RMBG.git $RMBG_DIR
+        Write-Success "ComfyUI-RMBG 克隆完成"
+    } catch {
+        Write-Warning "ComfyUI-RMBG 克隆失败: $_"
+    }
+}
+
+# 安装 RMBG 依赖
+$RMBG_REQ = Join-Path $RMBG_DIR "requirements.txt"
+if (Test-Path $RMBG_REQ) {
+    Write-Info "安装 ComfyUI-RMBG 依赖 …"
+    & pip install -r $RMBG_REQ --quiet
+    Write-Success "ComfyUI-RMBG 依赖安装完成"
+}
+Write-Host ""
+
+# comfyui_controlnet_aux (ControlNet 预处理器，可选)
 $CONTROLNET_AUX_DIR = Join-Path $CUSTOM_NODES_DIR "comfyui_controlnet_aux"
 if (Test-Path (Join-Path $CONTROLNET_AUX_DIR ".git")) {
     Write-Success "comfyui_controlnet_aux 已存在，跳过克隆"
@@ -275,41 +332,61 @@ if (-not (Test-Path (Join-Path $COMFYUI_DIR ".git"))) {
     $ALL_READY = $false
 }
 
-$SDXL_FILE = Join-Path $CKPT_DIR "sd_xl_base_1.0.safetensors"
-$LORA_FILE = Join-Path $LORA_DIR "sdxl_lightning_4step_lora.safetensors"
+$FLUX_UNET_FILE = Join-Path $UNET_DIR "flux1-schnell-Q5_K_S.gguf"
+$CLIP_L_FILE = Join-Path $CLIP_DIR "clip_l.safetensors"
+$T5XXL_FILE = Join-Path $CLIP_DIR "t5xxl_fp16.safetensors"
+$FLUX_VAE_FILE = Join-Path $VAE_DIR "ae.safetensors"
 
-if (-not (Test-Path $SDXL_FILE)) {
-    Write-Error "SDXL Base 模型未下载"
-    Write-Host "   手动下载: Invoke-WebRequest -Uri '$SDXL_URL' -OutFile '$SDXL_FILE'"
+if (-not (Test-Path $FLUX_UNET_FILE)) {
+    Write-Error "Flux.1 Schnell GGUF 模型未下载"
+    $FLUX_UNET_URL = "https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q5_K_S.gguf"
+    Write-Host "   手动下载: Invoke-WebRequest -Uri '$FLUX_UNET_URL' -OutFile '$FLUX_UNET_FILE'"
     $ALL_READY = $false
 } else {
-    Write-Success "SDXL Base 模型就绪"
+    Write-Success "Flux.1 Schnell GGUF 模型就绪"
 }
 
-if (-not (Test-Path $LORA_FILE)) {
-    Write-Error "SDXL Lightning LoRA 未下载"
-    Write-Host "   手动下载: Invoke-WebRequest -Uri '$LORA_URL' -OutFile '$LORA_FILE'"
+if (-not (Test-Path $CLIP_L_FILE)) {
+    Write-Error "CLIP-L 编码器未下载"
+    $CLIP_L_URL = "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
+    Write-Host "   手动下载: Invoke-WebRequest -Uri '$CLIP_L_URL' -OutFile '$CLIP_L_FILE'"
     $ALL_READY = $false
 } else {
-    Write-Success "SDXL Lightning LoRA 就绪"
+    Write-Success "CLIP-L 编码器就绪"
 }
 
-$CONTROLNET_FILE = Join-Path $CONTROLNET_DIR "diffusion_pytorch_model_promax.safetensors"
-if (-not (Test-Path $CONTROLNET_FILE)) {
-    Write-Error "ControlNet Union ProMax 未下载"
-    $CONTROLNET_URL = "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
-    Write-Host "   手动下载: Invoke-WebRequest -Uri '$CONTROLNET_URL' -OutFile '$CONTROLNET_FILE'"
+if (-not (Test-Path $T5XXL_FILE)) {
+    Write-Error "T5-XXL 编码器未下载"
+    $T5XXL_URL = "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors"
+    Write-Host "   手动下载: Invoke-WebRequest -Uri '$T5XXL_URL' -OutFile '$T5XXL_FILE'"
     $ALL_READY = $false
 } else {
-    Write-Success "ControlNet Union ProMax 就绪"
+    Write-Success "T5-XXL 编码器就绪"
 }
 
-$LAYERDIFFUSE_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-layerdiffuse"
-if (-not (Test-Path (Join-Path $LAYERDIFFUSE_DIR ".git"))) {
-    Write-Error "ComfyUI-layerdiffuse 插件未安装"
+if (-not (Test-Path $FLUX_VAE_FILE)) {
+    Write-Error "Flux VAE 未下载"
+    $FLUX_VAE_URL = "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors"
+    Write-Host "   手动下载: Invoke-WebRequest -Uri '$FLUX_VAE_URL' -OutFile '$FLUX_VAE_FILE'"
     $ALL_READY = $false
 } else {
-    Write-Success "ComfyUI-layerdiffuse 插件就绪"
+    Write-Success "Flux VAE 就绪"
+}
+
+$GGUF_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-GGUF"
+if (-not (Test-Path (Join-Path $GGUF_DIR ".git"))) {
+    Write-Error "ComfyUI-GGUF 插件未安装"
+    $ALL_READY = $false
+} else {
+    Write-Success "ComfyUI-GGUF 插件就绪"
+}
+
+$RMBG_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-RMBG"
+if (-not (Test-Path (Join-Path $RMBG_DIR ".git"))) {
+    Write-Error "ComfyUI-RMBG 插件未安装"
+    $ALL_READY = $false
+} else {
+    Write-Success "ComfyUI-RMBG 插件就绪"
 }
 
 $CONTROLNET_AUX_DIR = Join-Path $CUSTOM_NODES_DIR "comfyui_controlnet_aux"
@@ -334,6 +411,12 @@ if ($ALL_READY) {
     Write-Host "  ComfyUI:  http://127.0.0.1:8188"
 } else {
     Write-Warning "部分文件缺失，请根据上面的提示手动下载"
+    Write-Host ""
+    Write-Host "或使用 HuggingFace CLI 快速下载:"
+    Write-Host "  pip install huggingface-hub[cli]"
+    Write-Host "  huggingface-cli download city96/FLUX.1-schnell-gguf flux1-schnell-Q5_K_S.gguf --local-dir $UNET_DIR --local-dir-use-symlinks False"
+    Write-Host "  huggingface-cli download comfyanonymous/flux_text_encoders clip_l.safetensors t5xxl_fp16.safetensors --local-dir $CLIP_DIR --local-dir-use-symlinks False"
+    Write-Host "  huggingface-cli download black-forest-labs/FLUX.1-schnell ae.safetensors --local-dir $VAE_DIR --local-dir-use-symlinks False"
     exit 1
 }
 

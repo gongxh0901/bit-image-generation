@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(python3:*)",
+      "Bash(git fetch:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:comfyai.run)",
+      "WebFetch(domain:comfyui-wiki.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:comfyanonymous.github.io)",
+      "WebFetch(domain:blog.exp-pi.com)",
+      "WebFetch(domain:lilys.ai)"
     ]
   }
 }

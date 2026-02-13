@@ -139,6 +139,7 @@ async with AsyncSessionLocal() as session:
 - 新增服务或进程
 - 环境变量变化
 - 目录结构调整
+- **部署流程变化（模型文件替换、插件依赖变更、下载源变更）时，必须同步更新 `deploy.sh` 和 `deploy.ps1`**
 
 ## 注意事项
 

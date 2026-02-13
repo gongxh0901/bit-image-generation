@@ -3,13 +3,14 @@ set -euo pipefail
 
 # ============================================
 #  游戏素材生成系统 — 一键部署脚本
-#  自动下载 ComfyUI + AI 模型文件
+#  自动下载 ComfyUI + Flux.1 Schnell 模型 + 插件
 # ============================================
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 COMFYUI_DIR="$ROOT_DIR/ComfyUI"
-CKPT_DIR="$COMFYUI_DIR/models/checkpoints"
-LORA_DIR="$COMFYUI_DIR/models/loras"
+UNET_DIR="$COMFYUI_DIR/models/unet"
+CLIP_DIR="$COMFYUI_DIR/models/clip"
+VAE_DIR="$COMFYUI_DIR/models/vae"
 CONTROLNET_DIR="$COMFYUI_DIR/models/controlnet"
 CUSTOM_NODES_DIR="$COMFYUI_DIR/custom_nodes"
 
@@ -63,7 +64,7 @@ download_file() {
 
 # 检查磁盘空间
 check_disk_space() {
-    local required_gb=12
+    local required_gb=15
     local available_kb=$(df -k "$ROOT_DIR" | tail -1 | awk '{print $4}')
     local available_gb=$((available_kb / 1024 / 1024))
     
@@ -72,7 +73,7 @@ check_disk_space() {
         echo "   需要: ${required_gb}GB+"
         echo "   可用: ${available_gb}GB"
         echo ""
-        echo "模型文件较大，请确保有足够的磁盘空间。"
+        echo "Flux 模型文件较大，请确保有足够的磁盘空间。"
         exit 1
     fi
     
@@ -121,52 +122,86 @@ fi
 echo ""
 
 # ---------- 4. 创建模型目录 ----------
-mkdir -p "$CKPT_DIR"
-mkdir -p "$LORA_DIR"
+mkdir -p "$UNET_DIR"
+mkdir -p "$CLIP_DIR"
+mkdir -p "$VAE_DIR"
 mkdir -p "$CONTROLNET_DIR"
 
 # ---------- 5. 下载模型文件 ----------
 echo -e "${BLUE}→${NC} 检查模型文件 …"
 echo ""
 echo "注意: 模型文件较大，下载可能需要一些时间"
-echo "      SDXL Base: ~6.9GB"
-echo "      SDXL Lightning LoRA: ~300MB"
-echo "      ControlNet Union ProMax: ~2.5GB"
+echo "      Flux.1 Schnell GGUF: ~7.5GB"
+echo "      CLIP-L: ~250MB"
+echo "      T5-XXL: ~9.5GB"
+echo "      Flux VAE: ~350MB"
+echo "      ControlNet Union (可选): ~3GB"
 echo ""
 
-# SDXL Base 1.0
-SDXL_URL="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-SDXL_FILE="$CKPT_DIR/sd_xl_base_1.0.safetensors"
+# Flux.1 Schnell GGUF Q5_K_S
+FLUX_UNET_URL="https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q5_K_S.gguf"
+FLUX_UNET_FILE="$UNET_DIR/flux1-schnell-Q5_K_S.gguf"
 
-if ! download_file "$SDXL_URL" "$SDXL_FILE"; then
+if ! download_file "$FLUX_UNET_URL" "$FLUX_UNET_FILE"; then
     echo ""
-    echo -e "${YELLOW}⚠${NC} SDXL Base 下载失败"
+    echo -e "${YELLOW}⚠${NC} Flux.1 Schnell GGUF 下载失败"
     echo "   你可以稍后手动下载:"
-    echo "   wget -O $SDXL_FILE '$SDXL_URL'"
+    echo "   wget -O $FLUX_UNET_FILE '$FLUX_UNET_URL'"
 fi
 echo ""
 
-# SDXL Lightning 4-step LoRA
-LORA_URL="https://huggingface.co/ByteDance/SDXL-Lightning/resolve/main/sdxl_lightning_4step_lora.safetensors"
-LORA_FILE="$LORA_DIR/sdxl_lightning_4step_lora.safetensors"
+# CLIP-L
+CLIP_L_URL="https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
+CLIP_L_FILE="$CLIP_DIR/clip_l.safetensors"
 
-if ! download_file "$LORA_URL" "$LORA_FILE"; then
+if ! download_file "$CLIP_L_URL" "$CLIP_L_FILE"; then
     echo ""
-    echo -e "${YELLOW}⚠${NC} SDXL Lightning LoRA 下载失败"
+    echo -e "${YELLOW}⚠${NC} CLIP-L 编码器下载失败"
     echo "   你可以稍后手动下载:"
-    echo "   wget -O $LORA_FILE '$LORA_URL'"
+    echo "   wget -O $CLIP_L_FILE '$CLIP_L_URL'"
 fi
 echo ""
 
-# ControlNet Union ProMax
-CONTROLNET_URL="https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
-CONTROLNET_FILE="$CONTROLNET_DIR/diffusion_pytorch_model_promax.safetensors"
+# T5-XXL
+T5XXL_URL="https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors"
+T5XXL_FILE="$CLIP_DIR/t5xxl_fp16.safetensors"
 
-if ! download_file "$CONTROLNET_URL" "$CONTROLNET_FILE"; then
+if ! download_file "$T5XXL_URL" "$T5XXL_FILE"; then
     echo ""
-    echo -e "${YELLOW}⚠${NC} ControlNet Union ProMax 下载失败"
+    echo -e "${YELLOW}⚠${NC} T5-XXL 编码器下载失败"
     echo "   你可以稍后手动下载:"
-    echo "   wget -O $CONTROLNET_FILE '$CONTROLNET_URL'"
+    echo "   wget -O $T5XXL_FILE '$T5XXL_URL'"
+fi
+echo ""
+
+# Flux VAE
+FLUX_VAE_URL="https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors"
+FLUX_VAE_FILE="$VAE_DIR/ae.safetensors"
+
+if ! download_file "$FLUX_VAE_URL" "$FLUX_VAE_FILE"; then
+    echo ""
+    echo -e "${YELLOW}⚠${NC} Flux VAE 下载失败"
+    echo "   你可以稍后手动下载:"
+    echo "   wget -O $FLUX_VAE_FILE '$FLUX_VAE_URL'"
+fi
+echo ""
+
+# ControlNet Union (可选)
+echo -e "${BLUE}→${NC} ControlNet Union 为可选模型，是否下载？(约 3GB)"
+read -p "下载 ControlNet Union? [y/N] " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    CONTROLNET_URL="https://huggingface.co/InstantX/FLUX.1-dev-Controlnet-Union/resolve/main/diffusion_pytorch_model.safetensors"
+    CONTROLNET_FILE="$CONTROLNET_DIR/instantx-flux-union-controlnet.safetensors"
+    
+    if ! download_file "$CONTROLNET_URL" "$CONTROLNET_FILE"; then
+        echo ""
+        echo -e "${YELLOW}⚠${NC} ControlNet Union 下载失败"
+        echo "   你可以稍后手动下载:"
+        echo "   wget -O $CONTROLNET_FILE '$CONTROLNET_URL'"
+    fi
+else
+    echo -e "${BLUE}→${NC} 跳过 ControlNet Union 下载"
 fi
 echo ""
 
@@ -174,25 +209,43 @@ echo ""
 echo -e "${BLUE}→${NC} 检查 ComfyUI 插件 …"
 echo ""
 
-# ComfyUI-layerdiffuse (透明通道)
-LAYERDIFFUSE_DIR="$CUSTOM_NODES_DIR/ComfyUI-layerdiffuse"
-if [ -d "$LAYERDIFFUSE_DIR/.git" ]; then
-    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 已存在，跳过克隆"
+# ComfyUI-GGUF (必需)
+GGUF_DIR="$CUSTOM_NODES_DIR/ComfyUI-GGUF"
+if [ -d "$GGUF_DIR/.git" ]; then
+    echo -e "${GREEN}✔${NC} ComfyUI-GGUF 已存在，跳过克隆"
 else
-    echo -e "${BLUE}→${NC} 正在克隆 ComfyUI-layerdiffuse …"
-    git clone https://github.com/huchenlei/ComfyUI-layerdiffuse.git "$LAYERDIFFUSE_DIR"
-    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 克隆完成"
+    echo -e "${BLUE}→${NC} 正在克隆 ComfyUI-GGUF …"
+    git clone https://github.com/city96/ComfyUI-GGUF.git "$GGUF_DIR"
+    echo -e "${GREEN}✔${NC} ComfyUI-GGUF 克隆完成"
 fi
 
-# 安装 layerdiffuse 依赖
-if [ -f "$LAYERDIFFUSE_DIR/requirements.txt" ]; then
-    echo -e "${BLUE}→${NC} 安装 layerdiffuse 依赖 …"
-    pip3 install -r "$LAYERDIFFUSE_DIR/requirements.txt" --quiet
-    echo -e "${GREEN}✔${NC} layerdiffuse 依赖安装完成"
+# 安装 GGUF 依赖
+if [ -f "$GGUF_DIR/requirements.txt" ]; then
+    echo -e "${BLUE}→${NC} 安装 ComfyUI-GGUF 依赖 …"
+    pip3 install -r "$GGUF_DIR/requirements.txt" --quiet
+    echo -e "${GREEN}✔${NC} ComfyUI-GGUF 依赖安装完成"
 fi
 echo ""
 
-# comfyui_controlnet_aux (预处理器)
+# ComfyUI-RMBG (BiRefNet 抠图，必需)
+RMBG_DIR="$CUSTOM_NODES_DIR/ComfyUI-RMBG"
+if [ -d "$RMBG_DIR/.git" ]; then
+    echo -e "${GREEN}✔${NC} ComfyUI-RMBG 已存在，跳过克隆"
+else
+    echo -e "${BLUE}→${NC} 正在克隆 ComfyUI-RMBG …"
+    git clone https://github.com/1038lab/ComfyUI-RMBG.git "$RMBG_DIR"
+    echo -e "${GREEN}✔${NC} ComfyUI-RMBG 克隆完成"
+fi
+
+# 安装 RMBG 依赖
+if [ -f "$RMBG_DIR/requirements.txt" ]; then
+    echo -e "${BLUE}→${NC} 安装 ComfyUI-RMBG 依赖 …"
+    pip3 install -r "$RMBG_DIR/requirements.txt" --quiet
+    echo -e "${GREEN}✔${NC} ComfyUI-RMBG 依赖安装完成"
+fi
+echo ""
+
+# comfyui_controlnet_aux (ControlNet 预处理器，可选)
 CONTROLNET_AUX_DIR="$CUSTOM_NODES_DIR/comfyui_controlnet_aux"
 if [ -d "$CONTROLNET_AUX_DIR/.git" ]; then
     echo -e "${GREEN}✔${NC} comfyui_controlnet_aux 已存在，跳过克隆"
@@ -223,35 +276,50 @@ if [ ! -d "$COMFYUI_DIR/.git" ]; then
     ALL_READY=false
 fi
 
-if [ ! -f "$SDXL_FILE" ]; then
-    echo -e "${RED}✗${NC} SDXL Base 模型未下载"
-    echo "   手动下载: wget -O '$SDXL_FILE' '$SDXL_URL'"
+if [ ! -f "$FLUX_UNET_FILE" ]; then
+    echo -e "${RED}✗${NC} Flux.1 Schnell GGUF 模型未下载"
+    echo "   手动下载: curl -L -o '$FLUX_UNET_FILE' '$FLUX_UNET_URL'"
     ALL_READY=false
 else
-    echo -e "${GREEN}✔${NC} SDXL Base 模型就绪"
+    echo -e "${GREEN}✔${NC} Flux.1 Schnell GGUF 模型就绪"
 fi
 
-if [ ! -f "$LORA_FILE" ]; then
-    echo -e "${RED}✗${NC} SDXL Lightning LoRA 未下载"
-    echo "   手动下载: wget -O '$LORA_FILE' '$LORA_URL'"
+if [ ! -f "$CLIP_L_FILE" ]; then
+    echo -e "${RED}✗${NC} CLIP-L 编码器未下载"
+    echo "   手动下载: curl -L -o '$CLIP_L_FILE' '$CLIP_L_URL'"
     ALL_READY=false
 else
-    echo -e "${GREEN}✔${NC} SDXL Lightning LoRA 就绪"
+    echo -e "${GREEN}✔${NC} CLIP-L 编码器就绪"
 fi
 
-if [ ! -f "$CONTROLNET_FILE" ]; then
-    echo -e "${RED}✗${NC} ControlNet Union ProMax 未下载"
-    echo "   手动下载: wget -O '$CONTROLNET_FILE' '$CONTROLNET_URL'"
+if [ ! -f "$T5XXL_FILE" ]; then
+    echo -e "${RED}✗${NC} T5-XXL 编码器未下载"
+    echo "   手动下载: curl -L -o '$T5XXL_FILE' '$T5XXL_URL'"
     ALL_READY=false
 else
-    echo -e "${GREEN}✔${NC} ControlNet Union ProMax 就绪"
+    echo -e "${GREEN}✔${NC} T5-XXL 编码器就绪"
 fi
 
-if [ ! -d "$LAYERDIFFUSE_DIR/.git" ]; then
-    echo -e "${RED}✗${NC} ComfyUI-layerdiffuse 插件未安装"
+if [ ! -f "$FLUX_VAE_FILE" ]; then
+    echo -e "${RED}✗${NC} Flux VAE 未下载"
+    echo "   手动下载: curl -L -o '$FLUX_VAE_FILE' '$FLUX_VAE_URL'"
     ALL_READY=false
 else
-    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 插件就绪"
+    echo -e "${GREEN}✔${NC} Flux VAE 就绪"
+fi
+
+if [ ! -d "$GGUF_DIR/.git" ]; then
+    echo -e "${RED}✗${NC} ComfyUI-GGUF 插件未安装"
+    ALL_READY=false
+else
+    echo -e "${GREEN}✔${NC} ComfyUI-GGUF 插件就绪"
+fi
+
+if [ ! -d "$RMBG_DIR/.git" ]; then
+    echo -e "${RED}✗${NC} ComfyUI-RMBG 插件未安装"
+    ALL_READY=false
+else
+    echo -e "${GREEN}✔${NC} ComfyUI-RMBG 插件就绪"
 fi
 
 if [ ! -d "$CONTROLNET_AUX_DIR/.git" ]; then
@@ -275,6 +343,12 @@ if [ "$ALL_READY" = true ]; then
     echo "  ComfyUI:  http://127.0.0.1:8188"
 else
     echo -e "${YELLOW}部分文件缺失，请根据上面的提示手动下载${NC}"
+    echo ""
+    echo "或使用 HuggingFace CLI 快速下载:"
+    echo "  pip install huggingface-hub[cli]"
+    echo "  huggingface-cli download city96/FLUX.1-schnell-gguf flux1-schnell-Q5_K_S.gguf --local-dir $UNET_DIR --local-dir-use-symlinks False"
+    echo "  huggingface-cli download comfyanonymous/flux_text_encoders clip_l.safetensors t5xxl_fp16.safetensors --local-dir $CLIP_DIR --local-dir-use-symlinks False"
+    echo "  huggingface-cli download black-forest-labs/FLUX.1-schnell ae.safetensors --local-dir $VAE_DIR --local-dir-use-symlinks False"
     exit 1
 fi
 
