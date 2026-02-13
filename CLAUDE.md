@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-游戏素材生成系统 — 基于 SDXL + ComfyUI + FastAPI 的游戏 UI/VFX 素材批量生成平台，适配 Mac mini M2。支持 txt2img、img2img、透明通道（LayerDiffusion）、ControlNet、LoRA 训练与风格管理。
+游戏素材生成系统 — 基于 Flux.1 Schnell + ComfyUI + FastAPI 的游戏 UI/VFX 素材批量生成平台，适配 Mac mini M4。支持 txt2img、img2img、BiRefNet 抠图去背景、ControlNet Union、MFlux LoRA 训练与风格管理。
 
 ## 常用命令
 
@@ -33,7 +33,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000   # 在 backend/ 目录
 
 ```
 前端 (React/TS, :3000)  ←→  后端 (FastAPI, :8000)  ←→  ComfyUI (:8188)
-       Vite 代理               SQLite + WebSocket        SDXL + Lightning LoRA
+       Vite 代理               SQLite + WebSocket        Flux.1 Schnell GGUF
 ```
 
 三个服务独立运行。开发时前端通过 Vite 代理将 `/api`、`/ws`、`/outputs` 转发到后端；生产时后端直接托管 `frontend/dist/` 静态文件。
@@ -43,13 +43,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000   # 在 backend/ 目录
 | 文件 | 职责 |
 |------|------|
 | `main.py` | FastAPI 应用入口、所有 API 路由、静态文件托管、启动时数据库迁移 |
-| `models.py` | SQLAlchemy ORM 模型（Style、GenerationTask、TrainingJob、Dataset） |
+| `models.py` | SQLAlchemy ORM 模型（Style、GenerationTask、TrainingJob、Dataset、BackgroundRemovalTask） |
 | `schemas.py` | Pydantic 请求/响应模式定义 |
 | `database.py` | 异步 SQLAlchemy 引擎、会话工厂 |
-| `comfyui_client.py` | ComfyUI REST/WebSocket 客户端、工作流构建 |
-| `task_runner.py` | 后台任务执行（生成、训练），通过 `asyncio.create_task` 触发 |
+| `comfyui_client.py` | ComfyUI REST/WebSocket 客户端、Flux.1 Schnell 工作流动态构建 |
+| `task_runner.py` | 后台任务执行（生成、训练、抠图），通过 `asyncio.create_task` 触发 |
 | `progress.py` | WebSocket 进度广播中心，向前端推送任务进度 |
-| `workflows/` | ComfyUI JSON 工作流模板 |
 
 数据库使用 SQLite（异步驱动），启动时自动建表和列迁移（`_migrate_columns`）。无需手动执行迁移命令。
 
@@ -58,10 +57,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000   # 在 backend/ 目录
 | 目录 | 职责 |
 |------|------|
 | `pages/Home/` | 主页 — 生成面板 + 结果画廊 |
-| `pages/Training/` | LoRA 训练界面 |
-| `pages/History/` | 任务历史 |
-| `stores/` | Zustand 状态管理（generationStore、styleStore、taskStore、trainingStore） |
-| `services/` | Axios API 封装（generation、style、training、task、upload） |
+| `pages/RemoveBg/` | 抠图工具 — 上传图片、BiRefNet 抠图、对比预览 |
+| `pages/Training/` | LoRA 训练界面（MFlux） |
+| `pages/History/` | 任务历史（生成 + 抠图 + 训练） |
+| `stores/` | Zustand 状态管理（generationStore、styleStore、taskStore、trainingStore、removeBgStore） |
+| `services/` | Axios API 封装（generation、style、training、task、upload、removeBg） |
 | `hooks/useWebSocket.ts` | 全局 WebSocket 连接，监听 `/ws/progress` 实时进度 |
 | `theme/` | Ant Design 暗色主题配置 |
 | `types/` | TypeScript 类型定义 |
@@ -71,14 +71,15 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000   # 在 backend/ 目录
 ## 关键约定
 
 ### API 路由格式
-- REST 接口：`/api/styles`、`/api/generate`、`/api/training`、`/api/tasks`、`/api/upload`
+- REST 接口：`/api/styles`、`/api/generate`、`/api/training`、`/api/tasks`、`/api/upload`、`/api/remove-bg`
+- ControlNet 预览：`/api/controlnet/preview`
 - WebSocket 进度推送：`/ws/progress`
 - 静态文件访问：`/outputs/...`、`/uploads/...`
 
 ### WebSocket 消息格式
 ```json
 {
-  "kind": "generation | training",
+  "kind": "generation | training | remove_bg",
   "id": "任务ID",
   "status": "running | completed | failed | partial",
   "progress": 0.0,
@@ -94,15 +95,25 @@ async with AsyncSessionLocal() as session:
 ```
 
 ### 后台任务模式
-生成和训练任务通过 `asyncio.create_task()` 异步触发执行，在 `task_runner.py` 中通过 `ProgressHub.broadcast()` 推送进度。
+生成、训练和抠图任务通过 `asyncio.create_task()` 异步触发执行，在 `task_runner.py` 中通过 `ProgressHub.broadcast()` 推送进度。
 
 ### 环境变量
 - `COMFYUI_URL` — ComfyUI 地址（默认 `http://127.0.0.1:8188`）
 - `DATABASE_URL` — 数据库连接字符串（默认 `sqlite+aiosqlite:///./game_asset_generator.db`）
+- `FLUX_UNET` — Flux UNet 模型名（默认 `flux1-schnell-Q5_K_S.gguf`）
+- `FLUX_CLIP_L` — CLIP-L 编码器（默认 `clip_l.safetensors`）
+- `FLUX_T5XXL` — T5-XXL 编码器（默认 `t5xxl_fp16.safetensors`）
+- `FLUX_VAE` — Flux VAE（默认 `ae.safetensors`）
 
 ### 必需模型文件
-- `ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors`
-- `ComfyUI/models/loras/sdxl_lightning_4step_lora.safetensors`
+- `ComfyUI/models/unet/flux1-schnell-Q5_K_S.gguf`
+- `ComfyUI/models/clip/clip_l.safetensors`
+- `ComfyUI/models/clip/t5xxl_fp16.safetensors`
+- `ComfyUI/models/vae/ae.safetensors`
+
+### 必装 ComfyUI 插件
+- `ComfyUI/custom_nodes/ComfyUI-GGUF/` — GGUF 量化模型加载
+- `ComfyUI/custom_nodes/ComfyUI-RMBG/` — BiRefNet 抠图节点
 
 ## 修改后必须检查的文件
 

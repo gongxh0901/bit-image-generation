@@ -131,14 +131,21 @@ try {
     Write-Host "✔ ComfyUI 环境就绪" -ForegroundColor Green
 
     # ---------- 4. 检查模型 ----------
-    $CKPT_DIR = Join-Path $COMFYUI_DIR "models\checkpoints"
-    $LORA_DIR = Join-Path $COMFYUI_DIR "models\loras"
+    $UNET_DIR = Join-Path $COMFYUI_DIR "models\unet"
+    $CLIP_DIR = Join-Path $COMFYUI_DIR "models\clip"
+    $VAE_DIR = Join-Path $COMFYUI_DIR "models\vae"
 
-    if (-not (Test-Path (Join-Path $CKPT_DIR "sd_xl_base_1.0.safetensors"))) {
-        Write-Host "⚠️  未找到 SDXL 基础模型，请下载到: $CKPT_DIR\sd_xl_base_1.0.safetensors" -ForegroundColor Yellow
+    if (-not (Test-Path (Join-Path $UNET_DIR "flux1-schnell-Q5_K_S.gguf"))) {
+        Write-Host "⚠️  未找到 Flux.1 Schnell GGUF 模型，请下载到: $UNET_DIR\flux1-schnell-Q5_K_S.gguf" -ForegroundColor Yellow
     }
-    if (-not (Test-Path (Join-Path $LORA_DIR "sdxl_lightning_4step_lora.safetensors"))) {
-        Write-Host "⚠️  未找到 SDXL Lightning LoRA，请下载到: $LORA_DIR\sdxl_lightning_4step_lora.safetensors" -ForegroundColor Yellow
+    if (-not (Test-Path (Join-Path $CLIP_DIR "clip_l.safetensors"))) {
+        Write-Host "⚠️  未找到 CLIP-L 编码器，请下载到: $CLIP_DIR\clip_l.safetensors" -ForegroundColor Yellow
+    }
+    if (-not (Test-Path (Join-Path $CLIP_DIR "t5xxl_fp16.safetensors"))) {
+        Write-Host "⚠️  未找到 T5-XXL 编码器，请下载到: $CLIP_DIR\t5xxl_fp16.safetensors" -ForegroundColor Yellow
+    }
+    if (-not (Test-Path (Join-Path $VAE_DIR "ae.safetensors"))) {
+        Write-Host "⚠️  未找到 Flux VAE，请下载到: $VAE_DIR\ae.safetensors" -ForegroundColor Yellow
     }
 
     # ---------- 5. 创建 outputs 目录 ----------

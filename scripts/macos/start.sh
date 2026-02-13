@@ -95,14 +95,21 @@ fi
 echo "✔ ComfyUI 环境就绪"
 
 # ---------- 4. 检查模型 ----------
-CKPT_DIR="$COMFYUI_DIR/models/checkpoints"
-LORA_DIR="$COMFYUI_DIR/models/loras"
+UNET_DIR="$COMFYUI_DIR/models/unet"
+CLIP_DIR="$COMFYUI_DIR/models/clip"
+VAE_DIR="$COMFYUI_DIR/models/vae"
 
-if [ ! -f "$CKPT_DIR/sd_xl_base_1.0.safetensors" ]; then
-  echo "⚠️  未找到 SDXL 基础模型，请下载到: $CKPT_DIR/sd_xl_base_1.0.safetensors"
+if [ ! -f "$UNET_DIR/flux1-schnell-Q5_K_S.gguf" ]; then
+  echo "⚠️  未找到 Flux.1 Schnell GGUF 模型，请下载到: $UNET_DIR/flux1-schnell-Q5_K_S.gguf"
 fi
-if [ ! -f "$LORA_DIR/sdxl_lightning_4step_lora.safetensors" ]; then
-  echo "⚠️  未找到 SDXL Lightning LoRA，请下载到: $LORA_DIR/sdxl_lightning_4step_lora.safetensors"
+if [ ! -f "$CLIP_DIR/clip_l.safetensors" ]; then
+  echo "⚠️  未找到 CLIP-L 编码器，请下载到: $CLIP_DIR/clip_l.safetensors"
+fi
+if [ ! -f "$CLIP_DIR/t5xxl_fp16.safetensors" ]; then
+  echo "⚠️  未找到 T5-XXL 编码器，请下载到: $CLIP_DIR/t5xxl_fp16.safetensors"
+fi
+if [ ! -f "$VAE_DIR/ae.safetensors" ]; then
+  echo "⚠️  未找到 Flux VAE，请下载到: $VAE_DIR/ae.safetensors"
 fi
 
 # ---------- 5. 创建 outputs 目录 ----------
