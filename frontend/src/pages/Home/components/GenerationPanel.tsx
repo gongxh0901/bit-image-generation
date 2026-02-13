@@ -12,16 +12,25 @@ import {
   message,
   Tag,
   Image,
+  Switch,
+  Slider,
+  Collapse,
+  Spin,
+  Popover,
 } from 'antd';
 import {
   SendOutlined,
   InboxOutlined,
   PictureOutlined,
   DeleteOutlined,
+  ControlOutlined,
+  EyeInvisibleOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import { useState } from 'react';
 import { useStyleStore, useGenerationStore } from '@/stores';
+import type { ControlNetConfig } from '@/types';
 import { getStatusInfo } from '@/utils/format';
 import { uploadImage } from '@/services/upload';
 import styles from './GenerationPanel.module.css';
@@ -29,6 +38,14 @@ import styles from './GenerationPanel.module.css';
 const { TextArea } = Input;
 const { Text, Title } = Typography;
 const { Dragger } = Upload;
+
+/** ControlNet 类型选项 */
+const CONTROLNET_TYPE_OPTIONS = [
+  { value: 'canny', label: 'Canny（边缘检测）' },
+  { value: 'depth', label: 'Depth（深度图）' },
+  { value: 'scribble', label: 'Scribble（涂鸦）' },
+  { value: 'lineart', label: 'Lineart（线稿）' },
+];
 
 /**
  * 中间栏 - 生成操作面板
@@ -41,24 +58,38 @@ export function GenerationPanel() {
   const currentTask = useGenerationStore((s) => s.currentTask);
   const submit = useGenerationStore((s) => s.submitGeneration);
   const loading = useGenerationStore((s) => s.loading);
+  const currentFrame = useGenerationStore((s) => s.currentFrame);
+  const totalFrames = useGenerationStore((s) => s.totalFrames);
+  const frameProgress = useGenerationStore((s) => s.frameProgress);
+  const controlNetPreviewUrl = useGenerationStore((s) => s.controlNetPreviewUrl);
+  const controlNetPreviewLoading = useGenerationStore((s) => s.controlNetPreviewLoading);
+  const fetchControlNetPreview = useGenerationStore((s) => s.fetchControlNetPreview);
+  const clearControlNetPreview = useGenerationStore((s) => s.clearControlNetPreview);
 
   const [form] = Form.useForm();
   const [_fileList, setFileList] = useState<UploadFile[]>([]);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  // ControlNet 状态
+  const [cnEnabled, setCnEnabled] = useState(false);
+  const [cnType, setCnType] = useState<'canny' | 'depth' | 'scribble' | 'lineart'>('canny');
+  const [cnImageUrl, setCnImageUrl] = useState<string | null>(null);
+  const [cnImageFile, setCnImageFile] = useState<File | null>(null);
+  const [cnStrength, setCnStrength] = useState(1.0);
+  const [cnUploading, setCnUploading] = useState(false);
+
   const selectedStyle = styleList.find((s) => s.id === selectedStyleId);
 
   const isRunning = currentTask?.status === 'queued' || currentTask?.status === 'running';
 
-  /** 处理图片上传 */
+  /** 处理参考图上传 */
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
       const result = await uploadImage(file);
       setUploadedImageUrl(result.url);
       message.success('图片上传成功');
-      // 自动切换到 img2img 模式
       form.setFieldValue('type', 'img2img');
     } catch {
       message.error('图片上传失败');
@@ -67,11 +98,43 @@ export function GenerationPanel() {
     }
   };
 
-  /** 移除已上传的图片 */
+  /** 移除已上传的参考图 */
   const handleRemoveImage = () => {
     setUploadedImageUrl(null);
     setFileList([]);
     form.setFieldValue('type', 'txt2img');
+  };
+
+  /** 处理 ControlNet 图片上传 */
+  const handleCnUpload = async (file: File) => {
+    setCnUploading(true);
+    try {
+      const result = await uploadImage(file);
+      setCnImageUrl(result.url);
+      setCnImageFile(file);
+      message.success('控制图上传成功');
+      // 自动请求预处理预览
+      fetchControlNetPreview(file, cnType);
+    } catch {
+      message.error('控制图上传失败');
+    } finally {
+      setCnUploading(false);
+    }
+  };
+
+  /** 移除 ControlNet 控制图 */
+  const handleCnRemoveImage = () => {
+    setCnImageUrl(null);
+    setCnImageFile(null);
+    clearControlNetPreview();
+  };
+
+  /** ControlNet 类型切换时重新预览 */
+  const handleCnTypeChange = (value: 'canny' | 'depth' | 'scribble' | 'lineart') => {
+    setCnType(value);
+    if (cnImageFile) {
+      fetchControlNetPreview(cnImageFile, value);
+    }
   };
 
   const handleSubmit = async () => {
@@ -83,10 +146,20 @@ export function GenerationPanel() {
       const values = await form.validateFields();
       const genType = values.type as 'txt2img' | 'img2img';
 
-      // img2img 模式必须上传参考图
       if (genType === 'img2img' && !uploadedImageUrl) {
         message.warning('图生图模式需要上传参考图片');
         return;
+      }
+
+      // 构建 ControlNet 配置
+      let controlnet: ControlNetConfig | null = null;
+      if (cnEnabled && cnImageUrl) {
+        controlnet = {
+          enabled: true,
+          type: cnType,
+          image: cnImageUrl,
+          strength: cnStrength,
+        };
       }
 
       setGenerating(selectedStyleId, true);
@@ -95,6 +168,11 @@ export function GenerationPanel() {
         prompt: values.prompt,
         type: genType,
         inputImage: genType === 'img2img' ? uploadedImageUrl : undefined,
+        negativePrompt: values.negativePrompt,
+        seed: values.seed || null,
+        useTransparency: values.useTransparency ?? true,
+        batchSize: values.batchSize ?? 1,
+        controlnet,
       });
       message.success('生成任务已提交');
     } catch {
@@ -135,7 +213,12 @@ export function GenerationPanel() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ type: 'txt2img', numImages: 1 }}
+          initialValues={{
+            type: 'txt2img',
+            batchSize: 1,
+            useTransparency: true,
+            negativePrompt: 'ugly, blurry, low quality, watermark, text',
+          }}
           disabled={isRunning}
         >
           {/* 任务类型 */}
@@ -209,10 +292,243 @@ export function GenerationPanel() {
             />
           </Form.Item>
 
-          {/* 生成数量 */}
-          <Form.Item name="numImages" label="生成数量">
-            <InputNumber min={1} max={10} style={{ width: '100%' }} />
+          {/* 反向提示词（可折叠） */}
+          <Collapse
+            ghost
+            size="small"
+            className={styles.advancedCollapse}
+            items={[
+              {
+                key: 'negative',
+                label: (
+                  <Space size={4}>
+                    <EyeInvisibleOutlined />
+                    <span>反向提示词</span>
+                  </Space>
+                ),
+                children: (
+                  <Form.Item name="negativePrompt" noStyle>
+                    <TextArea
+                      rows={2}
+                      placeholder="不希望出现的内容"
+                      maxLength={500}
+                      className={styles.prompt}
+                    />
+                  </Form.Item>
+                ),
+              },
+            ]}
+          />
+
+          {/* 透明通道开关 + Seed */}
+          <div className={styles.inlineRow}>
+            <Form.Item
+              name="useTransparency"
+              label="透明通道"
+              valuePropName="checked"
+              className={styles.inlineItem}
+            >
+              <Switch defaultChecked />
+            </Form.Item>
+
+            <Form.Item name="seed" label="Seed（可选）" className={styles.inlineItemFlex}>
+              <InputNumber
+                min={0}
+                max={4294967295}
+                placeholder="留空随机"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </div>
+
+          {/* 批量变体数量 */}
+          <Form.Item name="batchSize" label="批量变体数量">
+            <Slider
+              min={1}
+              max={32}
+              marks={{ 1: '1', 4: '4', 8: '8', 16: '16', 32: '32' }}
+            />
           </Form.Item>
+
+          {/* ControlNet 面板 */}
+          <Collapse
+            ghost
+            size="small"
+            className={styles.advancedCollapse}
+            items={[
+              {
+                key: 'controlnet',
+                label: (
+                  <Space size={4}>
+                    <ControlOutlined />
+                    <span>ControlNet 控制</span>
+                    <Popover
+                      placement="right"
+                      title="ControlNet 控制说明"
+                      content={
+                        <div style={{ maxWidth: 320 }}>
+                          <Typography.Paragraph style={{ marginBottom: 12 }}>
+                            <strong>精确控制生成图片的结构和形状</strong>，而不仅仅依赖文字描述。
+                          </Typography.Paragraph>
+                          
+                          <Typography.Title level={5} style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
+                            四种控制类型
+                          </Typography.Title>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
+                            <strong>• Canny（边缘）</strong>：提取清晰的线条边缘<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：线稿、轮廓图 → 精细游戏图标</Text>
+                          </Typography.Paragraph>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
+                            <strong>• Depth（深度）</strong>：提取空间深度信息<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：控制物体的前后层次、3D 感</Text>
+                          </Typography.Paragraph>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
+                            <strong>• Scribble（涂鸦）</strong>：识别粗略的涂鸦线条<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：快速草图 → 完整素材</Text>
+                          </Typography.Paragraph>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 12 }}>
+                            <strong>• Lineart（线稿）</strong>：提取细腻的线条<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：角色线稿 → 带透明背景的游戏角色</Text>
+                          </Typography.Paragraph>
+
+                          <Typography.Title level={5} style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
+                            使用示例
+                          </Typography.Title>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 0 }}>
+                            <Text type="secondary">• 图标生成：简单涂鸦 → 精美水晶剑图标</Text><br />
+                            <Text type="secondary">• 角色素材：线稿 → 带透明背景的游戏角色</Text><br />
+                            <Text type="secondary">• VFX 特效：火焰草图 → 可直接使用的魔法特效</Text>
+                          </Typography.Paragraph>
+                        </div>
+                      }
+                      trigger="click"
+                    >
+                      <InfoCircleOutlined 
+                        style={{ 
+                          fontSize: 14, 
+                          color: '#1890ff',
+                          cursor: 'pointer',
+                          marginLeft: 4
+                        }} 
+                      />
+                    </Popover>
+                    {cnEnabled && <Tag color="blue" style={{ marginLeft: 4 }}>已启用</Tag>}
+                  </Space>
+                ),
+                children: (
+                  <div className={styles.controlNetPanel}>
+                    {/* 开关 */}
+                    <div className={styles.cnRow}>
+                      <Text>启用 ControlNet</Text>
+                      <Switch
+                        checked={cnEnabled}
+                        onChange={setCnEnabled}
+                      />
+                    </div>
+
+                    {cnEnabled && (
+                      <>
+                        {/* 类型选择 */}
+                        <div className={styles.cnField}>
+                          <Text type="secondary" className={styles.cnLabel}>控制类型</Text>
+                          <Select
+                            value={cnType}
+                            onChange={handleCnTypeChange}
+                            options={CONTROLNET_TYPE_OPTIONS}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+
+                        {/* 控制图上传 */}
+                        <div className={styles.cnField}>
+                          <Text type="secondary" className={styles.cnLabel}>控制图</Text>
+                          {cnImageUrl ? (
+                            <div className={styles.cnPreviewRow}>
+                              <div className={styles.cnImagePair}>
+                                <div className={styles.cnImageBox}>
+                                  <Text type="secondary" className={styles.cnImageLabel}>原图</Text>
+                                  <Image
+                                    src={cnImageUrl}
+                                    alt="控制图"
+                                    width={100}
+                                    height={100}
+                                    style={{ objectFit: 'cover', borderRadius: 6 }}
+                                  />
+                                </div>
+                                <div className={styles.cnImageBox}>
+                                  <Text type="secondary" className={styles.cnImageLabel}>预处理</Text>
+                                  {controlNetPreviewLoading ? (
+                                    <div className={styles.cnPreviewPlaceholder}>
+                                      <Spin size="small" />
+                                    </div>
+                                  ) : controlNetPreviewUrl ? (
+                                    <Image
+                                      src={controlNetPreviewUrl}
+                                      alt="预处理预览"
+                                      width={100}
+                                      height={100}
+                                      style={{ objectFit: 'cover', borderRadius: 6 }}
+                                    />
+                                  ) : (
+                                    <div className={styles.cnPreviewPlaceholder}>
+                                      <Text type="secondary" style={{ fontSize: 11 }}>等待预览</Text>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                type="text"
+                                danger
+                                icon={<DeleteOutlined />}
+                                size="small"
+                                onClick={handleCnRemoveImage}
+                              >
+                                移除
+                              </Button>
+                            </div>
+                          ) : (
+                            <Dragger
+                              accept="image/jpeg,image/png,image/webp"
+                              maxCount={1}
+                              showUploadList={false}
+                              beforeUpload={(file) => {
+                                handleCnUpload(file);
+                                return false;
+                              }}
+                              className={styles.uploader}
+                              disabled={cnUploading}
+                              style={{ padding: '8px 0' }}
+                            >
+                              <p className="ant-upload-drag-icon" style={{ marginBottom: 4 }}>
+                                <InboxOutlined style={{ fontSize: 24 }} />
+                              </p>
+                              <p className="ant-upload-text" style={{ fontSize: 12 }}>
+                                {cnUploading ? '上传中...' : '上传控制图'}
+                              </p>
+                            </Dragger>
+                          )}
+                        </div>
+
+                        {/* 强度滑块 */}
+                        <div className={styles.cnField}>
+                          <Text type="secondary" className={styles.cnLabel}>
+                            控制强度: {cnStrength.toFixed(1)}
+                          </Text>
+                          <Slider
+                            min={0}
+                            max={2}
+                            step={0.1}
+                            value={cnStrength}
+                            onChange={setCnStrength}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
         </Form>
 
         {/* 提交按钮 */}
@@ -238,26 +554,47 @@ export function GenerationPanel() {
               {getStatusInfo(currentTask.status).label}
             </Tag>
           </div>
+
+          {/* 总进度 */}
           <Progress
-            percent={0}
+            percent={Math.round((currentFrame / Math.max(totalFrames, 1)) * 100)}
             status="active"
             strokeColor={{
               '0%': '#3b82f6',
               '100%': '#22c55e',
             }}
           />
+
+          {/* 帧进度详情 */}
+          {totalFrames > 1 && (
+            <div className={styles.frameProgress}>
+              <Text type="secondary" className={styles.frameText}>
+                生成中 {currentFrame}/{totalFrames}
+              </Text>
+              <Progress
+                percent={Math.round(frameProgress * 100)}
+                size="small"
+                showInfo={false}
+                strokeColor="#8b5cf6"
+              />
+            </div>
+          )}
+
           <Text type="secondary" className={styles.progressHint}>
             任务 #{currentTask.id} · {currentTask.type === 'txt2img' ? '文生图' : '图生图'}
+            {currentTask.use_transparency && ' · 透明通道'}
           </Text>
         </Card>
       )}
 
       {/* 最近完成 */}
-      {currentTask && currentTask.status === 'completed' && (
+      {currentTask && (currentTask.status === 'completed' || currentTask.status === 'partial') && (
         <Card className={styles.progressCard} bordered={false}>
           <div className={styles.progressHeader}>
             <Text strong>最近完成</Text>
-            <Tag color="success">已完成</Tag>
+            <Tag color={currentTask.status === 'completed' ? 'success' : 'warning'}>
+              {currentTask.status === 'completed' ? '已完成' : '部分完成'}
+            </Tag>
           </div>
           <Text type="secondary">
             任务 #{currentTask.id} · 生成了 {currentTask.output_paths.length} 张图片

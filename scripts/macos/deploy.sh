@@ -10,6 +10,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 COMFYUI_DIR="$ROOT_DIR/ComfyUI"
 CKPT_DIR="$COMFYUI_DIR/models/checkpoints"
 LORA_DIR="$COMFYUI_DIR/models/loras"
+CONTROLNET_DIR="$COMFYUI_DIR/models/controlnet"
+CUSTOM_NODES_DIR="$COMFYUI_DIR/custom_nodes"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -61,7 +63,7 @@ download_file() {
 
 # 检查磁盘空间
 check_disk_space() {
-    local required_gb=8
+    local required_gb=12
     local available_kb=$(df -k "$ROOT_DIR" | tail -1 | awk '{print $4}')
     local available_gb=$((available_kb / 1024 / 1024))
     
@@ -121,6 +123,7 @@ echo ""
 # ---------- 4. 创建模型目录 ----------
 mkdir -p "$CKPT_DIR"
 mkdir -p "$LORA_DIR"
+mkdir -p "$CONTROLNET_DIR"
 
 # ---------- 5. 下载模型文件 ----------
 echo -e "${BLUE}→${NC} 检查模型文件 …"
@@ -128,6 +131,7 @@ echo ""
 echo "注意: 模型文件较大，下载可能需要一些时间"
 echo "      SDXL Base: ~6.9GB"
 echo "      SDXL Lightning LoRA: ~300MB"
+echo "      ControlNet Union ProMax: ~2.5GB"
 echo ""
 
 # SDXL Base 1.0
@@ -154,7 +158,59 @@ if ! download_file "$LORA_URL" "$LORA_FILE"; then
 fi
 echo ""
 
-# ---------- 6. 部署完成 ----------
+# ControlNet Union ProMax
+CONTROLNET_URL="https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
+CONTROLNET_FILE="$CONTROLNET_DIR/diffusion_pytorch_model_promax.safetensors"
+
+if ! download_file "$CONTROLNET_URL" "$CONTROLNET_FILE"; then
+    echo ""
+    echo -e "${YELLOW}⚠${NC} ControlNet Union ProMax 下载失败"
+    echo "   你可以稍后手动下载:"
+    echo "   wget -O $CONTROLNET_FILE '$CONTROLNET_URL'"
+fi
+echo ""
+
+# ---------- 6. 安装 ComfyUI 插件 ----------
+echo -e "${BLUE}→${NC} 检查 ComfyUI 插件 …"
+echo ""
+
+# ComfyUI-layerdiffuse (透明通道)
+LAYERDIFFUSE_DIR="$CUSTOM_NODES_DIR/ComfyUI-layerdiffuse"
+if [ -d "$LAYERDIFFUSE_DIR/.git" ]; then
+    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 已存在，跳过克隆"
+else
+    echo -e "${BLUE}→${NC} 正在克隆 ComfyUI-layerdiffuse …"
+    git clone https://github.com/huchenlei/ComfyUI-layerdiffuse.git "$LAYERDIFFUSE_DIR"
+    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 克隆完成"
+fi
+
+# 安装 layerdiffuse 依赖
+if [ -f "$LAYERDIFFUSE_DIR/requirements.txt" ]; then
+    echo -e "${BLUE}→${NC} 安装 layerdiffuse 依赖 …"
+    pip3 install -r "$LAYERDIFFUSE_DIR/requirements.txt" --quiet
+    echo -e "${GREEN}✔${NC} layerdiffuse 依赖安装完成"
+fi
+echo ""
+
+# comfyui_controlnet_aux (预处理器)
+CONTROLNET_AUX_DIR="$CUSTOM_NODES_DIR/comfyui_controlnet_aux"
+if [ -d "$CONTROLNET_AUX_DIR/.git" ]; then
+    echo -e "${GREEN}✔${NC} comfyui_controlnet_aux 已存在，跳过克隆"
+else
+    echo -e "${BLUE}→${NC} 正在克隆 comfyui_controlnet_aux …"
+    git clone https://github.com/Fannovel16/comfyui_controlnet_aux.git "$CONTROLNET_AUX_DIR"
+    echo -e "${GREEN}✔${NC} comfyui_controlnet_aux 克隆完成"
+fi
+
+# 安装 controlnet_aux 依赖
+if [ -f "$CONTROLNET_AUX_DIR/requirements.txt" ]; then
+    echo -e "${BLUE}→${NC} 安装 controlnet_aux 依赖 …"
+    pip3 install -r "$CONTROLNET_AUX_DIR/requirements.txt" --quiet
+    echo -e "${GREEN}✔${NC} controlnet_aux 依赖安装完成"
+fi
+echo ""
+
+# ---------- 7. 部署完成 ----------
 echo "========================================"
 echo "  部署完成！"
 echo ""
@@ -181,6 +237,28 @@ if [ ! -f "$LORA_FILE" ]; then
     ALL_READY=false
 else
     echo -e "${GREEN}✔${NC} SDXL Lightning LoRA 就绪"
+fi
+
+if [ ! -f "$CONTROLNET_FILE" ]; then
+    echo -e "${RED}✗${NC} ControlNet Union ProMax 未下载"
+    echo "   手动下载: wget -O '$CONTROLNET_FILE' '$CONTROLNET_URL'"
+    ALL_READY=false
+else
+    echo -e "${GREEN}✔${NC} ControlNet Union ProMax 就绪"
+fi
+
+if [ ! -d "$LAYERDIFFUSE_DIR/.git" ]; then
+    echo -e "${RED}✗${NC} ComfyUI-layerdiffuse 插件未安装"
+    ALL_READY=false
+else
+    echo -e "${GREEN}✔${NC} ComfyUI-layerdiffuse 插件就绪"
+fi
+
+if [ ! -d "$CONTROLNET_AUX_DIR/.git" ]; then
+    echo -e "${RED}✗${NC} comfyui_controlnet_aux 插件未安装"
+    ALL_READY=false
+else
+    echo -e "${GREEN}✔${NC} comfyui_controlnet_aux 插件就绪"
 fi
 
 echo ""

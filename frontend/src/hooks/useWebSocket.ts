@@ -35,8 +35,16 @@ export function useWebSocket() {
 
         switch (data.kind) {
           case 'generation':
-            useGenerationStore.getState().updateTaskProgress(data);
-            if (data.status === 'completed' || data.status === 'failed') {
+            useGenerationStore.getState().updateTaskProgress({
+              id: data.id,
+              status: data.status,
+              progress: data.progress,
+              current_frame: data.current_frame,
+              total_frames: data.total_frames,
+              frame_progress: data.frame_progress,
+              output_paths: data.output_paths,
+            });
+            if (data.status === 'completed' || data.status === 'failed' || data.status === 'partial') {
               // 获取当前任务的 style_id
               const task = useGenerationStore.getState().currentTask;
               if (task?.style_id) {

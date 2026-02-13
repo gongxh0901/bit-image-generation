@@ -4,6 +4,9 @@ export interface WSProgressMessage {
   id: number;
   status: string;
   progress?: number;
+  current_frame?: number;
+  total_frames?: number;
+  frame_progress?: number;
   output_paths?: string[];
   timestamp?: string;
 }

@@ -15,6 +15,8 @@ $ROOT_DIR = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvoca
 $COMFYUI_DIR = Join-Path $ROOT_DIR "ComfyUI"
 $CKPT_DIR = Join-Path $COMFYUI_DIR "models\checkpoints"
 $LORA_DIR = Join-Path $COMFYUI_DIR "models\loras"
+$CONTROLNET_DIR = Join-Path $COMFYUI_DIR "models\controlnet"
+$CUSTOM_NODES_DIR = Join-Path $COMFYUI_DIR "custom_nodes"
 
 # 颜色函数
 function Write-Success { param([string]$Message) Write-Host "✔ $Message" -ForegroundColor Green }
@@ -73,7 +75,7 @@ function Download-File {
 
 # 检查磁盘空间
 function Check-DiskSpace {
-    $requiredGB = 8
+    $requiredGB = 12
     $drive = Get-Item $ROOT_DIR | Select-Object -ExpandProperty PSDrive
     $availableGB = [math]::Floor($drive.Free / 1GB)
     
@@ -161,6 +163,7 @@ if (-not $SkipComfyUI) {
 # ---------- 4. 创建模型目录 ----------
 if (-not (Test-Path $CKPT_DIR)) { New-Item -ItemType Directory -Path $CKPT_DIR -Force | Out-Null }
 if (-not (Test-Path $LORA_DIR)) { New-Item -ItemType Directory -Path $LORA_DIR -Force | Out-Null }
+if (-not (Test-Path $CONTROLNET_DIR)) { New-Item -ItemType Directory -Path $CONTROLNET_DIR -Force | Out-Null }
 
 # ---------- 5. 下载模型文件 ----------
 if (-not $SkipModels) {
@@ -169,6 +172,7 @@ if (-not $SkipModels) {
     Write-Host "注意: 模型文件较大，下载可能需要一些时间"
     Write-Host "      SDXL Base: ~6.9GB"
     Write-Host "      SDXL Lightning LoRA: ~300MB"
+    Write-Host "      ControlNet Union ProMax: ~2.5GB"
     Write-Host ""
 
     # SDXL Base 1.0
@@ -194,9 +198,71 @@ if (-not $SkipModels) {
         Write-Host "   Invoke-WebRequest -Uri '$LORA_URL' -OutFile '$LORA_FILE'"
     }
     Write-Host ""
+
+    # ControlNet Union ProMax
+    $CONTROLNET_URL = "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
+    $CONTROLNET_FILE = Join-Path $CONTROLNET_DIR "diffusion_pytorch_model_promax.safetensors"
+
+    if (-not (Download-File -Url $CONTROLNET_URL -Output $CONTROLNET_FILE)) {
+        Write-Host ""
+        Write-Warning "ControlNet Union ProMax 下载失败"
+        Write-Host "   你可以稍后手动下载:"
+        Write-Host "   Invoke-WebRequest -Uri '$CONTROLNET_URL' -OutFile '$CONTROLNET_FILE'"
+    }
+    Write-Host ""
 }
 
-# ---------- 6. 部署完成 ----------
+# ---------- 6. 安装 ComfyUI 插件 ----------
+Write-Info "检查 ComfyUI 插件 …"
+Write-Host ""
+
+# ComfyUI-layerdiffuse (透明通道)
+$LAYERDIFFUSE_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-layerdiffuse"
+if (Test-Path (Join-Path $LAYERDIFFUSE_DIR ".git")) {
+    Write-Success "ComfyUI-layerdiffuse 已存在，跳过克隆"
+} else {
+    Write-Info "正在克隆 ComfyUI-layerdiffuse …"
+    try {
+        git clone https://github.com/huchenlei/ComfyUI-layerdiffuse.git $LAYERDIFFUSE_DIR
+        Write-Success "ComfyUI-layerdiffuse 克隆完成"
+    } catch {
+        Write-Warning "ComfyUI-layerdiffuse 克隆失败: $_"
+    }
+}
+
+# 安装 layerdiffuse 依赖
+$LAYERDIFFUSE_REQ = Join-Path $LAYERDIFFUSE_DIR "requirements.txt"
+if (Test-Path $LAYERDIFFUSE_REQ) {
+    Write-Info "安装 layerdiffuse 依赖 …"
+    & pip install -r $LAYERDIFFUSE_REQ --quiet
+    Write-Success "layerdiffuse 依赖安装完成"
+}
+Write-Host ""
+
+# comfyui_controlnet_aux (预处理器)
+$CONTROLNET_AUX_DIR = Join-Path $CUSTOM_NODES_DIR "comfyui_controlnet_aux"
+if (Test-Path (Join-Path $CONTROLNET_AUX_DIR ".git")) {
+    Write-Success "comfyui_controlnet_aux 已存在，跳过克隆"
+} else {
+    Write-Info "正在克隆 comfyui_controlnet_aux …"
+    try {
+        git clone https://github.com/Fannovel16/comfyui_controlnet_aux.git $CONTROLNET_AUX_DIR
+        Write-Success "comfyui_controlnet_aux 克隆完成"
+    } catch {
+        Write-Warning "comfyui_controlnet_aux 克隆失败: $_"
+    }
+}
+
+# 安装 controlnet_aux 依赖
+$CONTROLNET_AUX_REQ = Join-Path $CONTROLNET_AUX_DIR "requirements.txt"
+if (Test-Path $CONTROLNET_AUX_REQ) {
+    Write-Info "安装 controlnet_aux 依赖 …"
+    & pip install -r $CONTROLNET_AUX_REQ --quiet
+    Write-Success "controlnet_aux 依赖安装完成"
+}
+Write-Host ""
+
+# ---------- 7. 部署完成 ----------
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  部署完成！" -ForegroundColor Green
 Write-Host ""
@@ -226,6 +292,32 @@ if (-not (Test-Path $LORA_FILE)) {
     $ALL_READY = $false
 } else {
     Write-Success "SDXL Lightning LoRA 就绪"
+}
+
+$CONTROLNET_FILE = Join-Path $CONTROLNET_DIR "diffusion_pytorch_model_promax.safetensors"
+if (-not (Test-Path $CONTROLNET_FILE)) {
+    Write-Error "ControlNet Union ProMax 未下载"
+    $CONTROLNET_URL = "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
+    Write-Host "   手动下载: Invoke-WebRequest -Uri '$CONTROLNET_URL' -OutFile '$CONTROLNET_FILE'"
+    $ALL_READY = $false
+} else {
+    Write-Success "ControlNet Union ProMax 就绪"
+}
+
+$LAYERDIFFUSE_DIR = Join-Path $CUSTOM_NODES_DIR "ComfyUI-layerdiffuse"
+if (-not (Test-Path (Join-Path $LAYERDIFFUSE_DIR ".git"))) {
+    Write-Error "ComfyUI-layerdiffuse 插件未安装"
+    $ALL_READY = $false
+} else {
+    Write-Success "ComfyUI-layerdiffuse 插件就绪"
+}
+
+$CONTROLNET_AUX_DIR = Join-Path $CUSTOM_NODES_DIR "comfyui_controlnet_aux"
+if (-not (Test-Path (Join-Path $CONTROLNET_AUX_DIR ".git"))) {
+    Write-Error "comfyui_controlnet_aux 插件未安装"
+    $ALL_READY = $false
+} else {
+    Write-Success "comfyui_controlnet_aux 插件就绪"
 }
 
 Write-Host ""

@@ -3,14 +3,20 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.comfyui_client import check_health as comfy_health_check
+from app.comfyui_client import (
+    build_controlnet_preview_workflow,
+    check_health as comfy_health_check,
+    extract_image_paths,
+    queue_prompt,
+    wait_for_completion,
+)
 from app.database import AsyncSessionLocal, engine, get_session, init_db
 from app.models import GenerationTask, Style, TrainingJob
 from app.progress import ProgressHub
@@ -47,6 +53,12 @@ async def _migrate_columns() -> None:
         ("styles", "is_trained", "BOOLEAN NOT NULL DEFAULT 0"),
         ("generation_tasks", "input_image", "VARCHAR(512)"),
         ("training_jobs", "output_lora_path", "VARCHAR(512)"),
+        # 新增字段 - 统一透明通道与批量生成
+        ("generation_tasks", "negative_prompt", "TEXT DEFAULT ''"),
+        ("generation_tasks", "seed", "INTEGER"),
+        ("generation_tasks", "use_transparency", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("generation_tasks", "batch_size", "INTEGER NOT NULL DEFAULT 1"),
+        ("generation_tasks", "controlnet_config", "JSON"),
     ]
     async with engine.begin() as conn:
         for table, column, definition in migrations:
@@ -265,7 +277,13 @@ async def generate(
     payload: GenerationTaskCreate,
     session: AsyncSession = Depends(get_session),
 ) -> GenerationTask:
-    task = GenerationTask(**payload.model_dump(), status="queued", output_paths=[])
+    # 将 controlnet 配置转为 JSON 字段存储
+    task_data = payload.model_dump(exclude={"controlnet"})
+    task_data["controlnet_config"] = payload.controlnet.model_dump() if payload.controlnet else None
+    task_data["status"] = "queued"
+    task_data["output_paths"] = []
+
+    task = GenerationTask(**task_data)
     session.add(task)
     await session.commit()
     await session.refresh(task)
@@ -275,6 +293,88 @@ async def generate(
         progress_hub=progress_hub,
         task_id=task.id,
     )
+    return task
+
+
+# ---------- ControlNet 预处理预览 ----------
+
+
+@app.post("/api/controlnet/preview")
+async def controlnet_preview(
+    image: UploadFile,
+    control_type: str = Form(...),
+) -> dict:
+    """接收原图 + 控制类型，调用 ComfyUI 预处理器节点，返回预处理后的预览图。"""
+    valid_types = {"canny", "depth", "scribble", "lineart"}
+    if control_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的控制类型: {control_type}，支持 {', '.join(valid_types)}",
+        )
+
+    if not image.filename:
+        raise HTTPException(status_code=400, detail="文件名为空")
+
+    # 保存上传图片到 uploads/
+    content = await image.read()
+    ext = Path(image.filename).suffix.lower()
+    unique_name = f"ctrl_{uuid.uuid4().hex[:12]}{ext}"
+    dest = UPLOADS_DIR / unique_name
+    dest.write_bytes(content)
+
+    # 复制到 ComfyUI input 目录
+    import shutil
+    comfyui_input_dir = PROJECT_ROOT / "ComfyUI" / "input"
+    comfyui_input_dir.mkdir(parents=True, exist_ok=True)
+    comfyui_dest = comfyui_input_dir / unique_name
+    shutil.copy2(str(dest), str(comfyui_dest))
+
+    # 构建预处理预览工作流
+    workflow = build_controlnet_preview_workflow(
+        image_name=unique_name,
+        control_type=control_type,
+    )
+
+    try:
+        prompt_id = await queue_prompt(workflow)
+        history = await wait_for_completion(prompt_id, timeout=60)
+        image_paths = extract_image_paths(history)
+
+        if not image_paths:
+            raise RuntimeError("预处理未产出结果图片")
+
+        # 复制预览图到 outputs/
+        import os
+        served_paths: list[str] = []
+        for src in image_paths:
+            if os.path.exists(src):
+                filename = Path(src).name
+                out_dest = OUTPUTS_DIR / f"preview_{unique_name}_{filename}"
+                shutil.copy2(src, str(out_dest))
+                served_paths.append(f"/outputs/{out_dest.name}")
+
+        return {"preview_url": served_paths[0] if served_paths else None}
+
+    except Exception as exc:
+        logger.exception("ControlNet 预处理预览失败")
+        raise HTTPException(status_code=500, detail=f"预处理预览失败: {exc}") from exc
+
+
+# ---------- 任务详情 ----------
+
+
+@app.get("/api/tasks/{task_id}", response_model=GenerationTaskRead)
+async def get_task(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> GenerationTask:
+    """返回单个生成任务详情"""
+    result = await session.execute(
+        select(GenerationTask).where(GenerationTask.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
     return task
 
 

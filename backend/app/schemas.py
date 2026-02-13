@@ -4,6 +4,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+# ---------- ControlNet ----------
+
+
+class ControlNetConfig(BaseModel):
+    """ControlNet 配置"""
+    enabled: bool = False
+    type: Literal["canny", "depth", "scribble", "lineart"] = "canny"
+    image: str | None = None       # 上传控制图的 URL
+    strength: float = Field(default=1.0, ge=0.0, le=2.0)
+
+
+# ---------- 风格 ----------
+
+
 class StyleCreate(BaseModel):
     name: str
     type: Literal["ui", "vfx"]
@@ -61,7 +75,13 @@ class GenerationTaskCreate(BaseModel):
     style_id: int | None = None
     type: Literal["txt2img", "img2img"]
     prompt: str
+    negative_prompt: str = "ugly, blurry, low quality, watermark, text"
     input_image: str | None = None
+    seed: int | None = None        # 不填则随机
+
+    use_transparency: bool = True
+    batch_size: int = Field(default=1, ge=1, le=32)
+    controlnet: ControlNetConfig | None = None
 
 
 class GenerationTaskRead(BaseModel):
@@ -69,7 +89,12 @@ class GenerationTaskRead(BaseModel):
     style_id: int | None
     type: str
     prompt: str
+    negative_prompt: str
     input_image: str | None
+    seed: int | None
+    use_transparency: bool
+    batch_size: int
+    controlnet_config: dict | None
     status: str
     output_paths: list[str]
     created_at: datetime

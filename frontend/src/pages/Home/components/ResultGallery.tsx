@@ -30,6 +30,10 @@ export function ResultGallery() {
   const toggleImage = useGenerationStore((s) => s.toggleImageSelection);
   const selectAll = useGenerationStore((s) => s.selectAllImages);
   const clearSelection = useGenerationStore((s) => s.clearSelection);
+  const currentTask = useGenerationStore((s) => s.currentTask);
+
+  // 检查当前任务是否使用透明通道（用于决定背景样式）
+  const isTransparent = currentTask?.use_transparency ?? true;
 
   const results = selectedStyleId ? history[selectedStyleId] ?? [] : [];
   const allUrls = results.map((r) => r.imageUrl);
@@ -132,7 +136,7 @@ export function ResultGallery() {
                 return (
                   <div
                     key={result.id}
-                    className={`${styles.imageCard} ${isChecked ? styles.imageChecked : ''}`}
+                    className={`${styles.imageCard} ${isChecked ? styles.imageChecked : ''} ${isTransparent ? styles.checkerboard : ''}`}
                   >
                     {/* 选择框 */}
                     <div className={styles.checkWrap}>

@@ -102,3 +102,91 @@
   margin-top: 8px;
   display: block;
 }
+
+/* 帧进度 */
+.frameProgress {
+  margin-top: 8px;
+  padding: 8px 0;
+}
+
+.frameText {
+  font-size: 12px !important;
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* 高级选项折叠面板 */
+.advancedCollapse {
+  margin-bottom: 12px;
+}
+
+/* 行内控件排列（透明开关 + Seed） */
+.inlineRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.inlineItem {
+  flex: 0 0 auto;
+}
+
+.inlineItemFlex {
+  flex: 1;
+}
+
+/* ControlNet 面板 */
+.controlNetPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cnRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cnField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cnLabel {
+  font-size: 12px !important;
+}
+
+.cnPreviewRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cnImagePair {
+  display: flex;
+  gap: 8px;
+}
+
+.cnImageBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.cnImageLabel {
+  font-size: 11px !important;
+}
+
+.cnPreviewPlaceholder {
+  width: 100px;
+  height: 100px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  border: 1px dashed var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

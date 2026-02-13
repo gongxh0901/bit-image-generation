@@ -1,5 +1,6 @@
 export type { Style, StyleCreate, StyleType } from './style';
 export type {
+  ControlNetConfig,
   GenerationTask,
   GenerationTaskCreate,
   GenerationResult,

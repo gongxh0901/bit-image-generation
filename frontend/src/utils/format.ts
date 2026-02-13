@@ -30,6 +30,7 @@ export function getStatusInfo(status: string): { label: string; color: string } 
     queued: { label: '排队中', color: 'default' },
     running: { label: '进行中', color: 'processing' },
     completed: { label: '已完成', color: 'success' },
+    partial: { label: '部分完成', color: 'warning' },
     failed: { label: '失败', color: 'error' },
   };
   return map[status] ?? { label: status, color: 'default' };

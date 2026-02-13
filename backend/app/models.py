@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -43,8 +43,22 @@ class GenerationTask(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     style_id: Mapped[int | None] = mapped_column(ForeignKey("styles.id"), nullable=True)
     type: Mapped[str] = mapped_column(String(32), nullable=False)  # txt2img | img2img
-    prompt: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+    # 核心参数
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    negative_prompt: Mapped[str] = mapped_column(Text, default="")
     input_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 用户可指定，不填则随机
+
+    # 功能参数
+    use_transparency: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
+    batch_size: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
+
+    # ControlNet 配置 (JSON 存储)
+    # { "enabled": true, "type": "canny", "image": "...", "strength": 0.8 }
+    controlnet_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # 状态: queued, running, completed, failed, partial
     status: Mapped[str] = mapped_column(String(32), default="queued")
     output_paths: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
