@@ -34,6 +34,7 @@ class TrainingJob(Base):
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     progress: Mapped[float] = mapped_column(Float, default=0.0)
     output_lora_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    training_backend: Mapped[str] = mapped_column(String(32), default="mflux", server_default="mflux")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -51,7 +52,6 @@ class GenerationTask(Base):
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 用户可指定，不填则随机
 
     # 功能参数
-    use_transparency: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="1")
     batch_size: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default="1")
 
     # ControlNet 配置 (JSON 存储)
@@ -73,3 +73,16 @@ class Dataset(Base):
     tag_count: Mapped[int] = mapped_column(Integer, default=0)
     path: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BackgroundRemovalTask(Base):
+    __tablename__ = "background_removal_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    input_image: Mapped[str] = mapped_column(String(512), nullable=False)
+    output_image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    model: Mapped[str] = mapped_column(String(64), default="birefnet", server_default="birefnet")
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    source_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

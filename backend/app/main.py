@@ -18,9 +18,11 @@ from app.comfyui_client import (
     wait_for_completion,
 )
 from app.database import AsyncSessionLocal, engine, get_session, init_db
-from app.models import GenerationTask, Style, TrainingJob
+from app.models import BackgroundRemovalTask, GenerationTask, Style, TrainingJob
 from app.progress import ProgressHub
 from app.schemas import (
+    BackgroundRemovalCreate,
+    BackgroundRemovalRead,
     GenerationTaskCreate,
     GenerationTaskRead,
     StyleCreate,
@@ -30,7 +32,7 @@ from app.schemas import (
     TrainingJobCreate,
     TrainingJobRead,
 )
-from app.task_runner import run_generation_task, run_training_job
+from app.task_runner import run_generation_task, run_remove_bg_task, run_training_job
 
 logger = logging.getLogger(__name__)
 
@@ -46,23 +48,21 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 async def _migrate_columns() -> None:
-    """为已有表添加新列（SQLite 不支持 ALTER TABLE ADD COLUMN IF NOT EXISTS，手动检查）。"""
+    """为已有表添加新列。"""
     migrations: list[tuple[str, str, str]] = [
-        # (表名, 列名, DDL 定义)
         ("styles", "is_base", "BOOLEAN NOT NULL DEFAULT 0"),
         ("styles", "is_trained", "BOOLEAN NOT NULL DEFAULT 0"),
         ("generation_tasks", "input_image", "VARCHAR(512)"),
         ("training_jobs", "output_lora_path", "VARCHAR(512)"),
-        # 新增字段 - 统一透明通道与批量生成
         ("generation_tasks", "negative_prompt", "TEXT DEFAULT ''"),
         ("generation_tasks", "seed", "INTEGER"),
-        ("generation_tasks", "use_transparency", "BOOLEAN NOT NULL DEFAULT 1"),
         ("generation_tasks", "batch_size", "INTEGER NOT NULL DEFAULT 1"),
         ("generation_tasks", "controlnet_config", "JSON"),
+        # 新增
+        ("training_jobs", "training_backend", "VARCHAR(32) DEFAULT 'mflux'"),
     ]
     async with engine.begin() as conn:
         for table, column, definition in migrations:
-            # 检查列是否已存在
             result = await conn.execute(text(f"PRAGMA table_info({table})"))
             existing_columns = {row[1] for row in result.fetchall()}
             if column not in existing_columns:
@@ -296,6 +296,46 @@ async def generate(
     return task
 
 
+# ---------- 抠图中心 ----------
+
+
+@app.post("/api/remove-bg", response_model=BackgroundRemovalRead)
+async def remove_background(
+    payload: BackgroundRemovalCreate,
+    session: AsyncSession = Depends(get_session),
+) -> BackgroundRemovalTask:
+    task = BackgroundRemovalTask(
+        input_image=payload.input_image,
+        model=payload.model,
+        source_task_id=payload.source_task_id,
+        status="queued",
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+
+    run_remove_bg_task(
+        session_maker=AsyncSessionLocal,
+        progress_hub=progress_hub,
+        task_id=task.id,
+    )
+    return task
+
+
+@app.get("/api/remove-bg/{task_id}", response_model=BackgroundRemovalRead)
+async def get_remove_bg_task(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> BackgroundRemovalTask:
+    result = await session.execute(
+        select(BackgroundRemovalTask).where(BackgroundRemovalTask.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="抠图任务不存在")
+    return task
+
+
 # ---------- ControlNet 预处理预览 ----------
 
 
@@ -305,7 +345,7 @@ async def controlnet_preview(
     control_type: str = Form(...),
 ) -> dict:
     """接收原图 + 控制类型，调用 ComfyUI 预处理器节点，返回预处理后的预览图。"""
-    valid_types = {"canny", "depth", "scribble", "lineart"}
+    valid_types = {"canny", "depth", "tile", "blur", "pose"}
     if control_type not in valid_types:
         raise HTTPException(
             status_code=400,
@@ -387,6 +427,7 @@ async def list_tasks(
 ) -> list[TaskListItem]:
     training_result = await session.execute(select(TrainingJob))
     generation_result = await session.execute(select(GenerationTask))
+    rmbg_result = await session.execute(select(BackgroundRemovalTask))
 
     training_items = [
         TaskListItem(
@@ -408,7 +449,17 @@ async def list_tasks(
         )
         for i in generation_result.scalars().all()
     ]
-    merged = training_items + generation_items
+    rmbg_items = [
+        TaskListItem(
+            id=i.id,
+            task_kind="remove_bg",
+            status=i.status,
+            created_at=i.created_at,
+            output_paths=[i.output_image] if i.output_image else [],
+        )
+        for i in rmbg_result.scalars().all()
+    ]
+    merged = training_items + generation_items + rmbg_items
     merged.sort(key=lambda x: x.created_at, reverse=True)
     return merged
 

@@ -1,11 +1,12 @@
-"""Background task runner — dispatches generation tasks to ComfyUI.
+"""Background task runner — dispatches generation/training/remove-bg tasks.
 
 支持：
+- Flux.1 Schnell 生成（txt2img / img2img）
 - 批量变体生成（batch_size > 1 时循环执行，每帧随机 seed）
 - 单帧重试（最多 3 次）
 - partial 状态（部分帧成功）
-- 精细进度广播（current_frame / total_frames / frame_progress）
-- 透明通道 + ControlNet 工作流
+- BiRefNet 背景移除
+- MFlux LoRA 训练
 """
 
 from __future__ import annotations
@@ -25,12 +26,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.comfyui_client import (
     COMFYUI_URL,
-    build_universal_workflow,
+    build_flux_workflow,
+    build_remove_bg_workflow,
     extract_image_paths,
     queue_prompt,
     wait_for_completion,
 )
-from app.models import GenerationTask, Style, TrainingJob
+from app.models import BackgroundRemovalTask, GenerationTask, Style, TrainingJob
 from app.progress import ProgressHub
 
 logger = logging.getLogger(__name__)
@@ -59,7 +61,7 @@ async def _clear_gpu_cache() -> None:
                 if resp.status == 200:
                     logger.debug("GPU 缓存已清理")
     except Exception:
-        pass  # 非关键操作，忽略错误
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +99,23 @@ def run_generation_task(
     )
 
 
+def run_remove_bg_task(
+    *,
+    session_maker: async_sessionmaker,
+    progress_hub: ProgressHub,
+    task_id: int,
+) -> None:
+    asyncio.create_task(
+        _remove_bg_worker(
+            session_maker=session_maker,
+            progress_hub=progress_hub,
+            task_id=task_id,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
-#  Training worker (still simulated — requires Kohya_ss integration)
+#  Training worker — calls MFlux CLI
 # ---------------------------------------------------------------------------
 
 
@@ -108,7 +125,12 @@ async def _training_job_worker(
     progress_hub: ProgressHub,
     job_id: int,
 ) -> None:
-    """Training remains simulated — integrate Kohya_ss later."""
+    """MFlux LoRA 训练 worker。
+
+    通过 asyncio.create_subprocess_exec 调用 mflux-train CLI，
+    解析日志输出推送训练进度。
+    训练完成后自动将 LoRA 文件复制到 ComfyUI/models/loras/ 目录。
+    """
     try:
         async with session_maker() as session:
             result = await session.execute(
@@ -120,46 +142,111 @@ async def _training_job_worker(
             job.status = "running"
             await session.commit()
 
-        for p in range(10, 101, 10):
-            await asyncio.sleep(1)
+            # 提取训练参数
+            params = job.params or {}
+            dataset_path = job.dataset_path
+            style_id = job.style_id
+
+        # MFlux 训练输出目录
+        output_dir = OUTPUT_DIR / f"training_{job_id}"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        lora_rank = params.get("lora_rank", 16)
+        learning_rate = params.get("learning_rate", 1e-4)
+        steps = params.get("steps", 1000)
+
+        # 调用 MFlux CLI
+        cmd = [
+            "mflux-train",
+            "--model", "flux.1-schnell",
+            "--dataset-path", dataset_path,
+            "--output-dir", str(output_dir),
+            "--lora-rank", str(lora_rank),
+            "--learning-rate", str(learning_rate),
+            "--steps", str(steps),
+        ]
+
+        logger.info("启动 MFlux 训练: %s", " ".join(cmd))
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        # 读取输出，解析进度
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            text = line.decode().strip()
+            logger.debug("[MFlux] %s", text)
+
+            # 尝试解析进度（MFlux 输出格式：Step X/Y）
+            if "Step " in text and "/" in text:
+                try:
+                    parts = text.split("Step ")[1].split("/")
+                    current_step = int(parts[0].strip())
+                    total_steps = int(parts[1].split()[0].strip())
+                    progress = current_step / total_steps * 100
+                    await progress_hub.broadcast({
+                        "kind": "training",
+                        "id": job_id,
+                        "progress": round(progress, 1),
+                        "status": "running",
+                        "timestamp": _ts(),
+                    })
+                except (IndexError, ValueError):
+                    pass
+
+        await proc.wait()
+
+        if proc.returncode == 0:
+            # 查找输出的 LoRA 文件
+            lora_files = list(output_dir.glob("*.safetensors"))
+            output_lora_path: str | None = None
+
+            if lora_files:
+                # 复制到 ComfyUI/models/loras/
+                comfyui_loras = Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "models" / "loras"
+                comfyui_loras.mkdir(parents=True, exist_ok=True)
+                lora_file = lora_files[0]
+                dest_name = f"trained_style_{style_id}.safetensors"
+                dest = comfyui_loras / dest_name
+                shutil.copy2(str(lora_file), str(dest))
+                output_lora_path = dest_name
+                logger.info("LoRA 已复制到: %s", dest)
+
             async with session_maker() as session:
                 result = await session.execute(
                     select(TrainingJob).where(TrainingJob.id == job_id)
                 )
                 job = result.scalar_one_or_none()
-                if not job:
-                    return
-                job.progress = float(p)
-                if p >= 100:
+                if job:
                     job.status = "completed"
-                    # 模拟训练产出路径（真实训练时由 Kohya_ss 输出）
-                    job.output_lora_path = f"trained_style_{job.style_id}.safetensors"
+                    job.progress = 100.0
+                    job.output_lora_path = output_lora_path
 
-                    # ---- 训练完成：更新关联的风格 ----
-                    if job.style_id:
+                    if style_id:
                         style_result = await session.execute(
-                            select(Style).where(Style.id == job.style_id)
+                            select(Style).where(Style.id == style_id)
                         )
                         style = style_result.scalar_one_or_none()
-                        if style:
-                            style.lora_path = job.output_lora_path
+                        if style and output_lora_path:
+                            style.lora_path = output_lora_path
                             style.is_trained = True
-                            logger.info(
-                                "训练完成，已更新风格 %s: lora_path=%s",
-                                style.id,
-                                style.lora_path,
-                            )
-                await session.commit()
+                    await session.commit()
 
-            await progress_hub.broadcast(
-                {
-                    "kind": "training",
-                    "id": job_id,
-                    "progress": float(p),
-                    "status": "completed" if p >= 100 else "running",
-                    "timestamp": _ts(),
-                }
-            )
+            await progress_hub.broadcast({
+                "kind": "training",
+                "id": job_id,
+                "progress": 100.0,
+                "status": "completed",
+                "timestamp": _ts(),
+            })
+        else:
+            raise RuntimeError(f"MFlux 训练失败，退出码: {proc.returncode}")
+
     except Exception as exc:
         logger.exception("Training job %s failed", job_id)
         async with session_maker() as session:
@@ -170,20 +257,17 @@ async def _training_job_worker(
             if job:
                 job.status = "failed"
                 await session.commit()
-        await progress_hub.broadcast(
-            {
-                "kind": "training",
-                "id": job_id,
-                "status": "failed",
-                "error": str(exc),
-                "timestamp": _ts(),
-            }
-        )
+        await progress_hub.broadcast({
+            "kind": "training",
+            "id": job_id,
+            "status": "failed",
+            "error": str(exc),
+            "timestamp": _ts(),
+        })
 
 
 # ---------------------------------------------------------------------------
-#  Generation worker — calls real ComfyUI
-#  支持批量变体、单帧重试、partial 状态、精细进度
+#  Generation worker — calls real ComfyUI with Flux.1 Schnell
 # ---------------------------------------------------------------------------
 
 
@@ -204,7 +288,6 @@ async def _generation_task_worker(
                 return
 
             lora_name: str | None = None
-            checkpoint: str | None = None
             trigger_words: str = ""
 
             if task.style_id:
@@ -219,13 +302,12 @@ async def _generation_task_worker(
             task.status = "running"
             await session.commit()
 
-            # 提取任务参数（避免跨会话访问 ORM 对象）
+            # 提取任务参数
             task_type = task.type
             task_prompt = task.prompt
             task_negative_prompt = task.negative_prompt or ""
             task_input_image = task.input_image
             task_seed = task.seed
-            task_use_transparency = task.use_transparency
             task_batch_size = task.batch_size or 1
             task_controlnet_config = task.controlnet_config
 
@@ -249,7 +331,6 @@ async def _generation_task_worker(
         if task_controlnet_config and task_controlnet_config.get("enabled"):
             cn_image = task_controlnet_config.get("image", "")
             if cn_image:
-                # 从 URL 路径提取文件名并复制到 ComfyUI input
                 cn_filename = cn_image.split("/")[-1] if "/" in cn_image else cn_image
                 cn_upload_path = Path(__file__).resolve().parent.parent.parent / cn_image.lstrip("/")
                 comfyui_input_dir = Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "input"
@@ -259,18 +340,16 @@ async def _generation_task_worker(
                     shutil.copy2(str(cn_upload_path), str(cn_dest))
                     logger.info("已复制 ControlNet 控制图到 ComfyUI input: %s", cn_filename)
 
-        await progress_hub.broadcast(
-            {
-                "kind": "generation",
-                "id": task_id,
-                "status": "running",
-                "current_frame": 0,
-                "total_frames": task_batch_size,
-                "frame_progress": 0.0,
-                "progress": 0.0,
-                "timestamp": _ts(),
-            }
-        )
+        await progress_hub.broadcast({
+            "kind": "generation",
+            "id": task_id,
+            "status": "running",
+            "current_frame": 0,
+            "total_frames": task_batch_size,
+            "frame_progress": 0.0,
+            "progress": 0.0,
+            "timestamp": _ts(),
+        })
 
         # ---- 2. 批量循环生成 ----
         total = task_batch_size
@@ -279,7 +358,6 @@ async def _generation_task_worker(
         all_served_paths: list[str] = []
 
         for i in range(total):
-            # 每帧随机 seed（用户指定 seed 时仅第一帧使用，后续自增）
             if task_seed is not None:
                 frame_seed = task_seed + i
             else:
@@ -288,49 +366,38 @@ async def _generation_task_worker(
             frame_success = False
             client_id = str(uuid.uuid4())
 
-            # 重试机制：最多 MAX_RETRIES 次
             for attempt in range(MAX_RETRIES):
                 try:
-                    # 构建工作流
-                    workflow = build_universal_workflow(
+                    workflow = build_flux_workflow(
                         prompt=positive,
                         negative_prompt=task_negative_prompt,
                         seed=frame_seed,
-                        use_transparency=task_use_transparency,
                         controlnet=task_controlnet_config,
                         input_image=input_image_name,
                         lora_name=lora_name,
-                        checkpoint=checkpoint,
                     )
 
-                    # 提交到 ComfyUI
                     prompt_id = await queue_prompt(workflow, client_id=client_id)
 
-                    # 等待完成，同时广播帧内进度
                     async def on_progress(pct: float, _frame_idx: int = i) -> None:
-                        await progress_hub.broadcast(
-                            {
-                                "kind": "generation",
-                                "id": task_id,
-                                "status": "running",
-                                "current_frame": _frame_idx + 1,
-                                "total_frames": total,
-                                "frame_progress": round(pct / 100.0, 2),
-                                "progress": round((_frame_idx + pct / 100.0) / total, 3),
-                                "timestamp": _ts(),
-                            }
-                        )
+                        await progress_hub.broadcast({
+                            "kind": "generation",
+                            "id": task_id,
+                            "status": "running",
+                            "current_frame": _frame_idx + 1,
+                            "total_frames": total,
+                            "frame_progress": round(pct / 100.0, 2),
+                            "progress": round((_frame_idx + pct / 100.0) / total, 3),
+                            "timestamp": _ts(),
+                        })
 
                     history = await wait_for_completion(
                         prompt_id, client_id=client_id, on_progress=on_progress, timeout=300
                     )
 
-                    # 收集输出图片
                     comfy_paths = extract_image_paths(history)
                     for src in comfy_paths:
                         if os.path.exists(src):
-                            filename = Path(src).name
-                            # 文件命名: {task_id}_{序号}.png
                             out_name = f"{task_id}_{i}.png"
                             dest = OUTPUT_DIR / out_name
                             shutil.copy2(src, str(dest))
@@ -341,37 +408,29 @@ async def _generation_task_worker(
 
                     success_count += 1
                     frame_success = True
-                    break  # 成功则跳出重试循环
+                    break
 
                 except Exception as e:
-                    logger.warning(
-                        "任务 %s 帧 %d 第 %d 次尝试失败: %s",
-                        task_id, i, attempt + 1, e,
-                    )
+                    logger.warning("任务 %s 帧 %d 第 %d 次尝试失败: %s", task_id, i, attempt + 1, e)
                     if attempt < MAX_RETRIES - 1:
                         await _clear_gpu_cache()
                         await asyncio.sleep(1)
-                        continue
 
             if not frame_success:
                 failed_frames.append(i)
                 logger.error("任务 %s 帧 %d 在 %d 次重试后仍失败", task_id, i, MAX_RETRIES)
 
-            # 广播帧完成进度
-            await progress_hub.broadcast(
-                {
-                    "kind": "generation",
-                    "id": task_id,
-                    "status": "running",
-                    "current_frame": i + 1,
-                    "total_frames": total,
-                    "frame_progress": 1.0,
-                    "progress": round((i + 1) / total, 3),
-                    "timestamp": _ts(),
-                }
-            )
+            await progress_hub.broadcast({
+                "kind": "generation",
+                "id": task_id,
+                "status": "running",
+                "current_frame": i + 1,
+                "total_frames": total,
+                "frame_progress": 1.0,
+                "progress": round((i + 1) / total, 3),
+                "timestamp": _ts(),
+            })
 
-            # 帧间清理 GPU 缓存
             if i < total - 1:
                 await _clear_gpu_cache()
 
@@ -396,19 +455,17 @@ async def _generation_task_worker(
             await session.commit()
 
         # ---- 5. 广播最终状态 ----
-        await progress_hub.broadcast(
-            {
-                "kind": "generation",
-                "id": task_id,
-                "status": final_status,
-                "current_frame": total,
-                "total_frames": total,
-                "frame_progress": 1.0,
-                "progress": 1.0,
-                "output_paths": all_served_paths,
-                "timestamp": _ts(),
-            }
-        )
+        await progress_hub.broadcast({
+            "kind": "generation",
+            "id": task_id,
+            "status": final_status,
+            "current_frame": total,
+            "total_frames": total,
+            "frame_progress": 1.0,
+            "progress": 1.0,
+            "output_paths": all_served_paths,
+            "timestamp": _ts(),
+        })
 
         if failed_frames:
             logger.warning("任务 %s 完成，失败帧: %s", task_id, failed_frames)
@@ -423,12 +480,122 @@ async def _generation_task_worker(
             if task:
                 task.status = "failed"
                 await session.commit()
-        await progress_hub.broadcast(
-            {
-                "kind": "generation",
+        await progress_hub.broadcast({
+            "kind": "generation",
+            "id": task_id,
+            "status": "failed",
+            "error": str(exc),
+            "timestamp": _ts(),
+        })
+
+
+# ---------------------------------------------------------------------------
+#  Background removal worker — calls ComfyUI with BiRefNet
+# ---------------------------------------------------------------------------
+
+
+async def _remove_bg_worker(
+    *,
+    session_maker: async_sessionmaker,
+    progress_hub: ProgressHub,
+    task_id: int,
+) -> None:
+    """BiRefNet 背景移除 worker。"""
+    try:
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BackgroundRemovalTask).where(BackgroundRemovalTask.id == task_id)
+            )
+            task = result.scalar_one_or_none()
+            if not task:
+                return
+            task.status = "running"
+            await session.commit()
+            input_image = task.input_image
+
+        await progress_hub.broadcast({
+            "kind": "remove_bg",
+            "id": task_id,
+            "status": "running",
+            "progress": 0.0,
+            "timestamp": _ts(),
+        })
+
+        # 准备图片到 ComfyUI input 目录
+        upload_path = Path(__file__).resolve().parent.parent.parent / input_image.lstrip("/")
+        comfyui_input_dir = Path(__file__).resolve().parent.parent.parent / "ComfyUI" / "input"
+        comfyui_input_dir.mkdir(parents=True, exist_ok=True)
+
+        image_name = f"rmbg_{task_id}_{upload_path.name}"
+        dest = comfyui_input_dir / image_name
+        shutil.copy2(str(upload_path), str(dest))
+
+        # 构建并执行工作流
+        workflow = build_remove_bg_workflow(image_name=image_name)
+        client_id = str(uuid.uuid4())
+        prompt_id = await queue_prompt(workflow, client_id=client_id)
+
+        async def on_progress(pct: float) -> None:
+            await progress_hub.broadcast({
+                "kind": "remove_bg",
                 "id": task_id,
-                "status": "failed",
-                "error": str(exc),
+                "status": "running",
+                "progress": round(pct / 100.0, 2),
                 "timestamp": _ts(),
-            }
+            })
+
+        history = await wait_for_completion(
+            prompt_id, client_id=client_id, on_progress=on_progress, timeout=120
         )
+
+        comfy_paths = extract_image_paths(history)
+        if not comfy_paths:
+            raise RuntimeError("BiRefNet 未产出结果图片")
+
+        # 复制到 outputs/
+        src = comfy_paths[0]
+        out_name = f"rmbg_{task_id}.png"
+        out_path = OUTPUT_DIR / out_name
+        if os.path.exists(src):
+            shutil.copy2(src, str(out_path))
+
+        served_path = f"/outputs/{out_name}"
+
+        # 更新数据库
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BackgroundRemovalTask).where(BackgroundRemovalTask.id == task_id)
+            )
+            task = result.scalar_one_or_none()
+            if task:
+                task.status = "completed"
+                task.output_image = served_path
+                task.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+
+        await progress_hub.broadcast({
+            "kind": "remove_bg",
+            "id": task_id,
+            "status": "completed",
+            "progress": 1.0,
+            "output_paths": [served_path],
+            "timestamp": _ts(),
+        })
+
+    except Exception as exc:
+        logger.exception("Remove-bg task %s failed", task_id)
+        async with session_maker() as session:
+            result = await session.execute(
+                select(BackgroundRemovalTask).where(BackgroundRemovalTask.id == task_id)
+            )
+            task = result.scalar_one_or_none()
+            if task:
+                task.status = "failed"
+                await session.commit()
+        await progress_hub.broadcast({
+            "kind": "remove_bg",
+            "id": task_id,
+            "status": "failed",
+            "error": str(exc),
+            "timestamp": _ts(),
+        })

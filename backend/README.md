@@ -35,9 +35,7 @@ backend/
 │   ├── progress.py         # WebSocket 广播
 │   ├── comfyui_client.py   # ComfyUI API 客户端
 │   ├── task_runner.py      # 异步任务执行器
-│   └── workflows/
-│       ├── txt2img_sdxl_lightning.json
-│       └── img2img_sdxl_lightning.json
+│   └── workflows/          # 预留（工作流由 comfyui_client 动态构建）
 ├── requirements.txt
 └── (项目根) uploads/       # 上传参考图目录
 ```
