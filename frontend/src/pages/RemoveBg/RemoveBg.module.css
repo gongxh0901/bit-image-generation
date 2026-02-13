@@ -1,0 +1,114 @@
+.container {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.title {
+  margin: 0 !important;
+}
+
+.uploadCard {
+  margin-bottom: 24px;
+}
+
+.uploader {
+  border-radius: 8px;
+}
+
+.compareSection {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.compareCard {
+  flex: 1;
+  min-height: 300px;
+}
+
+.compareLabel {
+  margin-bottom: 12px;
+  display: block;
+}
+
+.imageWrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 260px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.checkerboard {
+  background-image:
+    linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.resultImage {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+}
+
+.emptyResult {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.historySection {
+  margin-top: 32px;
+}
+
+.historyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.historyCard {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.historyImage {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.progressWrap {
+  padding: 16px 0;
+}
+
+@media (max-width: 768px) {
+  .compareSection {
+    flex-direction: column;
+  }
+}

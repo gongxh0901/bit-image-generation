@@ -4,6 +4,7 @@ import {
   ExperimentOutlined,
   HistoryOutlined,
   ThunderboltOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -33,6 +34,11 @@ export function Header() {
       key: '/',
       icon: <HomeOutlined />,
       label: '生成工作台',
+    },
+    {
+      key: '/remove-bg',
+      icon: <ScissorOutlined />,
+      label: '抠图工具',
     },
     {
       key: '/training',

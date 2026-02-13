@@ -13,6 +13,7 @@ import {
   ReloadOutlined,
   ExperimentOutlined,
   PictureOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { TaskListItem } from '@/types';
@@ -25,6 +26,7 @@ const { Title, Text } = Typography;
 const kindLabels: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   training: { label: '训练', color: 'purple', icon: <ExperimentOutlined /> },
   generation: { label: '生成', color: 'blue', icon: <PictureOutlined /> },
+  remove_bg: { label: '抠图', color: 'green', icon: <ScissorOutlined /> },
 };
 
 export default function HistoryPage() {
@@ -156,6 +158,7 @@ export default function HistoryPage() {
             options={[
               { value: 'all', label: '全部类型' },
               { value: 'generation', label: '生成任务' },
+              { value: 'remove_bg', label: '抠图任务' },
               { value: 'training', label: '训练任务' },
             ]}
           />
