@@ -4,10 +4,10 @@ export type GenerationType = 'txt2img' | 'img2img';
 /** 生成任务状态 */
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'partial';
 
-/** ControlNet 配置 */
+/** ControlNet 配置（Flux.1 ControlNet Union） */
 export interface ControlNetConfig {
   enabled: boolean;
-  type: 'canny' | 'depth' | 'scribble' | 'lineart';
+  type: 'canny' | 'depth' | 'tile' | 'blur' | 'pose';
   image: string | null;
   strength: number;
 }
@@ -21,7 +21,6 @@ export interface GenerationTask {
   negative_prompt: string;
   input_image: string | null;
   seed: number | null;
-  use_transparency: boolean;
   batch_size: number;
   controlnet_config: ControlNetConfig | null;
   status: TaskStatus;
@@ -37,7 +36,6 @@ export interface GenerationTaskCreate {
   negative_prompt?: string;
   input_image?: string | null;
   seed?: number | null;
-  use_transparency?: boolean;
   batch_size?: number;
   controlnet?: ControlNetConfig | null;
 }

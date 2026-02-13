@@ -33,11 +33,9 @@ interface TrainingStore {
 }
 
 const defaultParams: TrainingParams = {
-  batch_size: 1,
+  lora_rank: 16,
   learning_rate: 0.0001,
-  max_train_steps: 1000,
-  resolution: 1024,
-  save_every_n_steps: 500,
+  steps: 1000,
 };
 
 const defaultFormData: TrainingFormData = {

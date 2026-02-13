@@ -15,3 +15,4 @@ export type {
 } from './training';
 export { TRAINING_PARAM_HINTS } from './training';
 export type { WSProgressMessage, TaskListItem } from './common';
+export type { RemoveBgTask, RemoveBgTaskCreate } from './removeBg';

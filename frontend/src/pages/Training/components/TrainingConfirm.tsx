@@ -44,8 +44,8 @@ export function TrainingConfirm() {
           <Text>{datasetFiles.length} 张图片</Text>
         </Descriptions.Item>
 
-        <Descriptions.Item label="批次大小">
-          <Text>{params.batch_size}</Text>
+        <Descriptions.Item label="LoRA Rank">
+          <Text>{params.lora_rank}</Text>
         </Descriptions.Item>
 
         <Descriptions.Item label="学习率">
@@ -53,15 +53,7 @@ export function TrainingConfirm() {
         </Descriptions.Item>
 
         <Descriptions.Item label="训练步数">
-          <Text>{params.max_train_steps}</Text>
-        </Descriptions.Item>
-
-        <Descriptions.Item label="分辨率">
-          <Text>{params.resolution} × {params.resolution}</Text>
-        </Descriptions.Item>
-
-        <Descriptions.Item label="保存间隔">
-          <Text>每 {params.save_every_n_steps ?? 500} 步</Text>
+          <Text>{params.steps}</Text>
         </Descriptions.Item>
       </Descriptions>
     </div>

@@ -31,7 +31,6 @@ interface GenerationStore {
     inputImage?: string | null;
     negativePrompt?: string;
     seed?: number | null;
-    useTransparency?: boolean;
     batchSize?: number;
     controlnet?: ControlNetConfig | null;
   }) => Promise<GenerationTask>;
@@ -79,7 +78,6 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
     inputImage,
     negativePrompt,
     seed,
-    useTransparency,
     batchSize,
     controlnet,
   }) => {
@@ -92,7 +90,6 @@ export const useGenerationStore = create<GenerationStore>((set, get) => ({
         negative_prompt: negativePrompt,
         input_image: inputImage ?? undefined,
         seed: seed ?? undefined,
-        use_transparency: useTransparency,
         batch_size: batchSize,
         controlnet: controlnet ?? undefined,
       });

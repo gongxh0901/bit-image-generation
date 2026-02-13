@@ -13,13 +13,11 @@ export interface TrainingJob {
   created_at: string;
 }
 
-/** 训练参数 */
+/** MFlux 训练参数 */
 export interface TrainingParams {
-  batch_size: number;
+  lora_rank: number;
   learning_rate: number;
-  max_train_steps: number;
-  resolution: number;
-  save_every_n_steps?: number;
+  steps: number;
 }
 
 /** 创建训练任务请求 */
@@ -32,13 +30,13 @@ export interface TrainingJobCreate {
 
 /** 训练参数字段描述（用于表单提示） */
 export const TRAINING_PARAM_HINTS: Record<keyof TrainingParams, { label: string; hint: string; min?: number; max?: number; step?: number; default: number }> = {
-  batch_size: {
-    label: '批次大小',
-    hint: '每步训练使用的图片数量，建议 1-4',
-    min: 1,
-    max: 8,
-    step: 1,
-    default: 1,
+  lora_rank: {
+    label: 'LoRA Rank',
+    hint: 'LoRA 维度，值越大容量越大但越慢，建议 8-32',
+    min: 4,
+    max: 64,
+    step: 4,
+    default: 16,
   },
   learning_rate: {
     label: '学习率',
@@ -48,28 +46,12 @@ export const TRAINING_PARAM_HINTS: Record<keyof TrainingParams, { label: string;
     step: 0.00001,
     default: 0.0001,
   },
-  max_train_steps: {
+  steps: {
     label: '训练步数',
-    hint: '训练总轮次，建议 1000-3000',
+    hint: '训练总步数，建议 500-3000',
     min: 100,
     max: 10000,
     step: 100,
     default: 1000,
-  },
-  resolution: {
-    label: '分辨率',
-    hint: '图片训练尺寸，SDXL 推荐 1024',
-    min: 512,
-    max: 2048,
-    step: 128,
-    default: 1024,
-  },
-  save_every_n_steps: {
-    label: '保存间隔',
-    hint: '每隔多少步保存一次模型检查点',
-    min: 100,
-    max: 5000,
-    step: 100,
-    default: 500,
   },
 };

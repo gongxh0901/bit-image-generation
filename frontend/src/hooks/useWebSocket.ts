@@ -3,6 +3,7 @@ import type { WSProgressMessage } from '@/types';
 import { useGenerationStore } from '@/stores/generationStore';
 import { useTrainingStore } from '@/stores/trainingStore';
 import { useStyleStore } from '@/stores/styleStore';
+import { useRemoveBgStore } from '@/stores/removeBgStore';
 
 /** WebSocket 连接状态 */
 export type WSStatus = 'connecting' | 'connected' | 'disconnected';
@@ -55,6 +56,15 @@ export function useWebSocket() {
 
           case 'training':
             useTrainingStore.getState().updateJobProgress(data);
+            break;
+
+          case 'remove_bg':
+            useRemoveBgStore.getState().updateTaskProgress({
+              id: data.id,
+              status: data.status,
+              progress: data.progress,
+              output_paths: data.output_paths,
+            });
             break;
         }
       } catch (e) {

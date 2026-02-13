@@ -12,7 +12,6 @@ import {
   message,
   Tag,
   Image,
-  Switch,
   Slider,
   Collapse,
   Spin,
@@ -43,8 +42,9 @@ const { Dragger } = Upload;
 const CONTROLNET_TYPE_OPTIONS = [
   { value: 'canny', label: 'Canny（边缘检测）' },
   { value: 'depth', label: 'Depth（深度图）' },
-  { value: 'scribble', label: 'Scribble（涂鸦）' },
-  { value: 'lineart', label: 'Lineart（线稿）' },
+  { value: 'tile', label: 'Tile（细节增强）' },
+  { value: 'blur', label: 'Blur（模糊引导）' },
+  { value: 'pose', label: 'Pose（姿态控制）' },
 ];
 
 /**
@@ -73,7 +73,7 @@ export function GenerationPanel() {
 
   // ControlNet 状态
   const [cnEnabled, setCnEnabled] = useState(false);
-  const [cnType, setCnType] = useState<'canny' | 'depth' | 'scribble' | 'lineart'>('canny');
+  const [cnType, setCnType] = useState<'canny' | 'depth' | 'tile' | 'blur' | 'pose'>('canny');
   const [cnImageUrl, setCnImageUrl] = useState<string | null>(null);
   const [cnImageFile, setCnImageFile] = useState<File | null>(null);
   const [cnStrength, setCnStrength] = useState(1.0);
@@ -130,7 +130,7 @@ export function GenerationPanel() {
   };
 
   /** ControlNet 类型切换时重新预览 */
-  const handleCnTypeChange = (value: 'canny' | 'depth' | 'scribble' | 'lineart') => {
+  const handleCnTypeChange = (value: 'canny' | 'depth' | 'tile' | 'blur' | 'pose') => {
     setCnType(value);
     if (cnImageFile) {
       fetchControlNetPreview(cnImageFile, value);
@@ -170,7 +170,6 @@ export function GenerationPanel() {
         inputImage: genType === 'img2img' ? uploadedImageUrl : undefined,
         negativePrompt: values.negativePrompt,
         seed: values.seed || null,
-        useTransparency: values.useTransparency ?? true,
         batchSize: values.batchSize ?? 1,
         controlnet,
       });
@@ -216,7 +215,6 @@ export function GenerationPanel() {
           initialValues={{
             type: 'txt2img',
             batchSize: 1,
-            useTransparency: true,
             negativePrompt: 'ugly, blurry, low quality, watermark, text',
           }}
           disabled={isRunning}
@@ -320,26 +318,15 @@ export function GenerationPanel() {
             ]}
           />
 
-          {/* 透明通道开关 + Seed */}
-          <div className={styles.inlineRow}>
-            <Form.Item
-              name="useTransparency"
-              label="透明通道"
-              valuePropName="checked"
-              className={styles.inlineItem}
-            >
-              <Switch defaultChecked />
-            </Form.Item>
-
-            <Form.Item name="seed" label="Seed（可选）" className={styles.inlineItemFlex}>
-              <InputNumber
-                min={0}
-                max={4294967295}
-                placeholder="留空随机"
-                style={{ width: '100%' }}
-              />
-            </Form.Item>
-          </div>
+          {/* Seed */}
+          <Form.Item name="seed" label="Seed（可选）">
+            <InputNumber
+              min={0}
+              max={4294967295}
+              placeholder="留空随机"
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
 
           {/* 批量变体数量 */}
           <Form.Item name="batchSize" label="批量变体数量">
@@ -372,7 +359,7 @@ export function GenerationPanel() {
                           </Typography.Paragraph>
                           
                           <Typography.Title level={5} style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
-                            四种控制类型
+                            五种控制类型
                           </Typography.Title>
                           <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
                             <strong>• Canny（边缘）</strong>：提取清晰的线条边缘<br />
@@ -383,12 +370,16 @@ export function GenerationPanel() {
                             <Text type="secondary" style={{ fontSize: 11 }}>适用：控制物体的前后层次、3D 感</Text>
                           </Typography.Paragraph>
                           <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
-                            <strong>• Scribble（涂鸦）</strong>：识别粗略的涂鸦线条<br />
-                            <Text type="secondary" style={{ fontSize: 11 }}>适用：快速草图 → 完整素材</Text>
+                            <strong>• Tile（细节）</strong>：增强图片细节<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：超分辨率、细节补充</Text>
+                          </Typography.Paragraph>
+                          <Typography.Paragraph style={{ fontSize: 12, marginBottom: 4 }}>
+                            <strong>• Blur（模糊）</strong>：模糊引导生成<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：色块参考 → 风格化素材</Text>
                           </Typography.Paragraph>
                           <Typography.Paragraph style={{ fontSize: 12, marginBottom: 12 }}>
-                            <strong>• Lineart（线稿）</strong>：提取细腻的线条<br />
-                            <Text type="secondary" style={{ fontSize: 11 }}>适用：角色线稿 → 带透明背景的游戏角色</Text>
+                            <strong>• Pose（姿态）</strong>：检测人物关键点<br />
+                            <Text type="secondary" style={{ fontSize: 11 }}>适用：角色姿态控制 → 游戏角色</Text>
                           </Typography.Paragraph>
 
                           <Typography.Title level={5} style={{ fontSize: 13, marginTop: 12, marginBottom: 8 }}>
@@ -396,8 +387,8 @@ export function GenerationPanel() {
                           </Typography.Title>
                           <Typography.Paragraph style={{ fontSize: 12, marginBottom: 0 }}>
                             <Text type="secondary">• 图标生成：简单涂鸦 → 精美水晶剑图标</Text><br />
-                            <Text type="secondary">• 角色素材：线稿 → 带透明背景的游戏角色</Text><br />
-                            <Text type="secondary">• VFX 特效：火焰草图 → 可直接使用的魔法特效</Text>
+                            <Text type="secondary">• 角色素材：姿态控制 → 游戏角色</Text><br />
+                            <Text type="secondary">• VFX 特效：模糊引导 → 可直接使用的魔法特效</Text>
                           </Typography.Paragraph>
                         </div>
                       }
@@ -420,10 +411,13 @@ export function GenerationPanel() {
                     {/* 开关 */}
                     <div className={styles.cnRow}>
                       <Text>启用 ControlNet</Text>
-                      <Switch
-                        checked={cnEnabled}
-                        onChange={setCnEnabled}
-                      />
+                      <Button
+                        type={cnEnabled ? 'primary' : 'default'}
+                        size="small"
+                        onClick={() => setCnEnabled(!cnEnabled)}
+                      >
+                        {cnEnabled ? '已启用' : '点击启用'}
+                      </Button>
                     </div>
 
                     {cnEnabled && (
@@ -582,7 +576,6 @@ export function GenerationPanel() {
 
           <Text type="secondary" className={styles.progressHint}>
             任务 #{currentTask.id} · {currentTask.type === 'txt2img' ? '文生图' : '图生图'}
-            {currentTask.use_transparency && ' · 透明通道'}
           </Text>
         </Card>
       )}

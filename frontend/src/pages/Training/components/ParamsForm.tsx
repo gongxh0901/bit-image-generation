@@ -1,4 +1,4 @@
-import { Form, InputNumber, Select, Typography, Divider } from 'antd';
+import { Form, InputNumber, Typography } from 'antd';
 import { useTrainingStore } from '@/stores';
 import { TRAINING_PARAM_HINTS } from '@/types';
 import type { TrainingParams } from '@/types';
@@ -26,16 +26,16 @@ export function ParamsForm() {
 
       <Form layout="vertical">
         <Form.Item
-          label={TRAINING_PARAM_HINTS.batch_size.label}
-          help={TRAINING_PARAM_HINTS.batch_size.hint}
+          label={TRAINING_PARAM_HINTS.lora_rank.label}
+          help={TRAINING_PARAM_HINTS.lora_rank.hint}
         >
           <InputNumber
             size="large"
-            min={TRAINING_PARAM_HINTS.batch_size.min}
-            max={TRAINING_PARAM_HINTS.batch_size.max}
-            step={TRAINING_PARAM_HINTS.batch_size.step}
-            value={params.batch_size}
-            onChange={(v) => updateParam('batch_size', v ?? 1)}
+            min={TRAINING_PARAM_HINTS.lora_rank.min}
+            max={TRAINING_PARAM_HINTS.lora_rank.max}
+            step={TRAINING_PARAM_HINTS.lora_rank.step}
+            value={params.lora_rank}
+            onChange={(v) => updateParam('lora_rank', v ?? 16)}
             style={{ width: '100%' }}
           />
         </Form.Item>
@@ -57,49 +57,16 @@ export function ParamsForm() {
         </Form.Item>
 
         <Form.Item
-          label={TRAINING_PARAM_HINTS.max_train_steps.label}
-          help={TRAINING_PARAM_HINTS.max_train_steps.hint}
+          label={TRAINING_PARAM_HINTS.steps.label}
+          help={TRAINING_PARAM_HINTS.steps.hint}
         >
           <InputNumber
             size="large"
-            min={TRAINING_PARAM_HINTS.max_train_steps.min}
-            max={TRAINING_PARAM_HINTS.max_train_steps.max}
-            step={TRAINING_PARAM_HINTS.max_train_steps.step}
-            value={params.max_train_steps}
-            onChange={(v) => updateParam('max_train_steps', v ?? 1000)}
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
-
-        <Form.Item
-          label={TRAINING_PARAM_HINTS.resolution.label}
-          help={TRAINING_PARAM_HINTS.resolution.hint}
-        >
-          <Select
-            size="large"
-            value={params.resolution}
-            onChange={(v) => updateParam('resolution', v)}
-            options={[
-              { value: 512, label: '512 × 512' },
-              { value: 768, label: '768 × 768' },
-              { value: 1024, label: '1024 × 1024（推荐）' },
-            ]}
-          />
-        </Form.Item>
-
-        <Divider />
-
-        <Form.Item
-          label={TRAINING_PARAM_HINTS.save_every_n_steps.label}
-          help={TRAINING_PARAM_HINTS.save_every_n_steps.hint}
-        >
-          <InputNumber
-            size="large"
-            min={TRAINING_PARAM_HINTS.save_every_n_steps.min}
-            max={TRAINING_PARAM_HINTS.save_every_n_steps.max}
-            step={TRAINING_PARAM_HINTS.save_every_n_steps.step}
-            value={params.save_every_n_steps}
-            onChange={(v) => updateParam('save_every_n_steps', v ?? 500)}
+            min={TRAINING_PARAM_HINTS.steps.min}
+            max={TRAINING_PARAM_HINTS.steps.max}
+            step={TRAINING_PARAM_HINTS.steps.step}
+            value={params.steps}
+            onChange={(v) => updateParam('steps', v ?? 1000)}
             style={{ width: '100%' }}
           />
         </Form.Item>

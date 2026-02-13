@@ -1,6 +1,6 @@
 /** WebSocket 进度消息 */
 export interface WSProgressMessage {
-  kind: 'generation' | 'training';
+  kind: 'generation' | 'training' | 'remove_bg';
   id: number;
   status: string;
   progress?: number;
@@ -14,7 +14,7 @@ export interface WSProgressMessage {
 /** 任务列表项 */
 export interface TaskListItem {
   id: number;
-  task_kind: 'training' | 'generation';
+  task_kind: 'training' | 'generation' | 'remove_bg';
   status: string;
   created_at: string;
   progress?: number;

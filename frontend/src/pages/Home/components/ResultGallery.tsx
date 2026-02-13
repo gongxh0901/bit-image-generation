@@ -13,8 +13,9 @@ import {
   SelectOutlined,
   FileZipOutlined,
   CloudDownloadOutlined,
+  ScissorOutlined,
 } from '@ant-design/icons';
-import { useStyleStore, useGenerationStore } from '@/stores';
+import { useStyleStore, useGenerationStore, useRemoveBgStore } from '@/stores';
 import { downloadImage, downloadImagesAsZip } from '@/utils/download';
 import styles from './ResultGallery.module.css';
 
@@ -30,10 +31,16 @@ export function ResultGallery() {
   const toggleImage = useGenerationStore((s) => s.toggleImageSelection);
   const selectAll = useGenerationStore((s) => s.selectAllImages);
   const clearSelection = useGenerationStore((s) => s.clearSelection);
-  const currentTask = useGenerationStore((s) => s.currentTask);
+  const submitRemoveBg = useRemoveBgStore((s) => s.submitRemoveBg);
 
-  // 检查当前任务是否使用透明通道（用于决定背景样式）
-  const isTransparent = currentTask?.use_transparency ?? true;
+  const handleRemoveBg = async (imageUrl: string, taskId: number) => {
+    try {
+      await submitRemoveBg(imageUrl, taskId);
+      message.success('抠图任务已提交');
+    } catch {
+      message.error('抠图任务提交失败');
+    }
+  };
 
   const results = selectedStyleId ? history[selectedStyleId] ?? [] : [];
   const allUrls = results.map((r) => r.imageUrl);
@@ -136,7 +143,7 @@ export function ResultGallery() {
                 return (
                   <div
                     key={result.id}
-                    className={`${styles.imageCard} ${isChecked ? styles.imageChecked : ''} ${isTransparent ? styles.checkerboard : ''}`}
+                    className={`${styles.imageCard} ${isChecked ? styles.imageChecked : ''}`}
                   >
                     {/* 选择框 */}
                     <div className={styles.checkWrap}>
@@ -155,18 +162,31 @@ export function ResultGallery() {
                       fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzFhMjMzMiIvPjx0ZXh0IHg9IjEwMCIgeT0iMTAwIiBmaWxsPSIjNjQ3NDhiIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj7liqDovb3lpLHotKU8L3RleHQ+PC9zdmc+"
                     />
 
-                    {/* 单图下载按钮 */}
+                    {/* 操作按钮 */}
                     <div className={styles.downloadOverlay}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<DownloadOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          downloadImage(result.imageUrl, result.filename);
-                        }}
-                        className={styles.downloadBtn}
-                      />
+                      <Space size={4}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<ScissorOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveBg(result.imageUrl, result.taskId);
+                          }}
+                          className={styles.downloadBtn}
+                          title="抠图去背景"
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadImage(result.imageUrl, result.filename);
+                          }}
+                          className={styles.downloadBtn}
+                        />
+                      </Space>
                     </div>
 
                     {/* 文件名 */}

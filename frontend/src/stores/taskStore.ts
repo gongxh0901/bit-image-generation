@@ -11,7 +11,7 @@ interface TaskStore {
   error: string | null;
   /** 筛选条件 */
   filter: {
-    kind: 'all' | 'training' | 'generation';
+    kind: 'all' | 'training' | 'generation' | 'remove_bg';
     status: 'all' | 'queued' | 'running' | 'completed' | 'failed';
   };
 
